@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lifemetrics_app/models/health_snapshot.dart';
 import 'package:lifemetrics_app/screens/athlete/body/samsung_health_screen.dart';
+import 'package:lifemetrics_app/models/health_sync.dart';
 import 'package:lifemetrics_app/services/health_service.dart';
+import 'package:lifemetrics_app/services/health_sync_service.dart';
 
 // 헬스 커넥트 대신 정해진 상태와 데이터를 돌려줌
 class _FakeHealth extends HealthService {
@@ -25,17 +28,52 @@ class _FakeHealth extends HealthService {
   @override
   Future<HealthSnapshot> fetch({int dayCount = 7, DateTime? now}) async =>
       _snapshot!;
+
+  bool syncPermitted = true;
+
+  @override
+  Future<bool> hasSyncPermissions() async => syncPermitted;
+}
+
+// 서버 대신 정해진 결과를 돌려줌
+class _FakeSync extends HealthSyncService {
+  _FakeSync(HealthService health) : super(health: health, token: 't');
+
+  int calls = 0;
+  DateTime? last;
+
+  @override
+  Future<DateTime?> lastSyncedAt() async => last;
+
+  @override
+  Future<HealthSyncResult> sync({DateTime? now}) async {
+    calls++;
+    last = DateTime(2026, 11, 1, 21, 5);
+    return const HealthSyncResult(
+      days: 7,
+      nutrition: 3,
+      exercises: 1,
+      deleted: 0,
+    );
+  }
 }
 
 void main() {
-  Future<void> pump(WidgetTester tester, HealthService service) async {
+  // 화면이 마지막 동기화 시각을 기기 저장소에서 읽음
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  Future<void> pump(
+    WidgetTester tester,
+    HealthService service, {
+    HealthSyncService? sync,
+  }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(brightness: Brightness.dark),
-        home: SamsungHealthScreen(service: service),
+        home: SamsungHealthScreen(service: service, syncService: sync),
       ),
     );
     await tester.pumpAndSettle();
@@ -135,5 +173,62 @@ void main() {
     await tester.tap(find.text('권한 허용'));
     await tester.pumpAndSettle();
     expect(service.authRequests, 1);
+  });
+
+  testWidgets('지금 올리기 → 서버 반영 건수와 마지막 시각', (tester) async {
+    final health = _FakeHealth(
+      HealthStatus.ready,
+      HealthSnapshot(
+        days: [DailyHealth(day: DateTime(2026, 11, 1), steps: 100)],
+      ),
+    );
+    final sync = _FakeSync(health);
+    await pump(tester, health, sync: sync);
+
+    expect(find.text('아직 서버에 올린 적 없어요'), findsOneWidget);
+    await tester.tap(find.text('지금 올리기'));
+    await tester.pumpAndSettle();
+
+    expect(sync.calls, 1);
+    expect(find.text('서버에 올렸어요 · 7일, 식사 3건, 운동 1건'), findsOneWidget);
+    expect(find.text('마지막 2026년 11월 1일 오후 9:05'), findsOneWidget);
+  });
+
+  testWidgets('동기화 권한을 끝내 안 주면 올리지 않음', (tester) async {
+    final health = _FakeHealth(
+      HealthStatus.ready,
+      HealthSnapshot(
+        days: [DailyHealth(day: DateTime(2026, 11, 1), steps: 100)],
+      ),
+    )..syncPermitted = false;
+    final sync = _FakeSync(health);
+    await pump(tester, health, sync: sync);
+
+    await tester.tap(find.text('지금 올리기'));
+    await tester.pumpAndSettle();
+
+    expect(health.authRequests, 1);
+    expect(sync.calls, 0);
+    expect(find.textContaining('권한을 허용해야'), findsOneWidget);
+  });
+
+  testWidgets('토큰 없이 빌드하면 버튼이 꺼져 있음', (tester) async {
+    final health = _FakeHealth(
+      HealthStatus.ready,
+      HealthSnapshot(
+        days: [DailyHealth(day: DateTime(2026, 11, 1), steps: 100)],
+      ),
+    );
+    await pump(
+      tester,
+      health,
+      sync: HealthSyncService(health: health, token: ''),
+    );
+
+    expect(find.text('앱에 동기화 토큰이 없어 올릴 수 없어요'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '지금 올리기'),
+    );
+    expect(button.onPressed, isNull);
   });
 }

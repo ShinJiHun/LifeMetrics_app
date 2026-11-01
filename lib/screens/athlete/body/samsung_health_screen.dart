@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 
 import '../../../models/athlete_section.dart';
 import '../../../models/health_snapshot.dart';
+import '../../../services/api_client.dart';
 import '../../../services/health_service.dart';
+import '../../../services/health_sync_service.dart';
 import '../../../utils/format.dart';
 
 // 삼성헬스: 헬스 커넥트에 동기화된 오늘 수치 + 어제 식사 + 최근 7일 걸음 · 수면
+// + 서버(lifemetrics)로 올리기
 class SamsungHealthScreen extends StatefulWidget {
-  const SamsungHealthScreen({super.key, this.service});
+  const SamsungHealthScreen({super.key, this.service, this.syncService});
 
   final HealthService? service;
+  final HealthSyncService? syncService;
 
   @override
   State<SamsungHealthScreen> createState() => _SamsungHealthScreenState();
@@ -21,16 +25,23 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
   static final _color = AthleteSection.body.color;
 
   late final HealthService _service = widget.service ?? HealthService();
+  late final HealthSyncService _sync =
+      widget.syncService ?? HealthSyncService(health: _service);
 
   HealthStatus? _status; // 확인 중엔 null
   HealthSnapshot? _snapshot;
   String? _error;
+  bool _syncing = false;
+  DateTime? _lastSync;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _load();
+    _sync.lastSyncedAt().then((t) {
+      if (mounted) setState(() => _lastSync = t);
+    });
   }
 
   @override
@@ -73,6 +84,38 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
     }
     await _service.requestAuthorization();
     await _load();
+  }
+
+  // 동기화에 필요한 권한(운동 · 거리 · 칼로리 등)이 없으면 먼저 요청하고 서버로 올림
+  Future<void> _syncNow() async {
+    final messenger = ScaffoldMessenger.of(context);
+    void show(String text) =>
+        messenger.showSnackBar(SnackBar(content: Text(text)));
+
+    setState(() => _syncing = true);
+    try {
+      if (!await _service.hasSyncPermissions()) {
+        await _service.requestAuthorization();
+        if (!await _service.hasSyncPermissions()) {
+          show('식사 · 운동 · 거리 · 칼로리 읽기 권한을 허용해야 올릴 수 있어요');
+          return;
+        }
+      }
+      final r = await _sync.sync();
+      final last = await _sync.lastSyncedAt();
+      if (!mounted) return;
+      setState(() => _lastSync = last);
+      show(
+        '서버에 올렸어요 · ${r.days}일, 식사 ${r.nutrition}건, 운동 ${r.exercises}건'
+        '${r.deleted > 0 ? ', 삭제 ${r.deleted}건' : ''}',
+      );
+    } on ApiException catch (e) {
+      show(e.message);
+    } catch (_) {
+      show('동기화하지 못했어요');
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
   }
 
   @override
@@ -145,6 +188,14 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
           ),
+        _SyncCard(
+          configured: _sync.configured,
+          syncing: _syncing,
+          lastSync: _lastSync,
+          color: _color,
+          onSync: _syncNow,
+        ),
+        const SizedBox(height: 20),
         _Label('오늘'),
         GridView.count(
           crossAxisCount: 2,
@@ -249,6 +300,75 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
           ),
         ],
       ],
+    );
+  }
+}
+
+// 서버로 올리기: 마지막 동기화 시각 + 버튼
+class _SyncCard extends StatelessWidget {
+  const _SyncCard({
+    required this.configured,
+    required this.syncing,
+    required this.lastSync,
+    required this.color,
+    required this.onSync,
+  });
+
+  final bool configured;
+  final bool syncing;
+  final DateTime? lastSync;
+  final Color color;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = Colors.white.withValues(alpha: 0.55);
+    final status = !configured
+        ? '앱에 동기화 토큰이 없어 올릴 수 없어요'
+        : lastSync == null
+        ? '아직 서버에 올린 적 없어요'
+        : '마지막 ${formatDateTime(lastSync!)}';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_upload_outlined, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '서버 동기화',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(status, style: TextStyle(color: muted, fontSize: 12)),
+              ],
+            ),
+          ),
+          if (syncing)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            FilledButton(
+              onPressed: configured ? onSync : null,
+              style: FilledButton.styleFrom(backgroundColor: color),
+              child: const Text('지금 올리기'),
+            ),
+        ],
+      ),
     );
   }
 }

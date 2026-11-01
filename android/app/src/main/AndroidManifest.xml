@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.health.READ_WEIGHT"/>
     <uses-permission android:name="android.permission.health.READ_BODY_FAT"/>
     <uses-permission android:name="android.permission.health.READ_NUTRITION"/>
+    <!-- 서버 동기화용: 운동 세션, 이동 거리, 총 소모 칼로리 -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
+    <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED"/>
     <application
         android:label="lifemetrics_app"
         android:name="${applicationName}"

@@ -174,6 +174,23 @@ class HealthService {
     return true;
   }
 
+  // 이 기기의 헬스 커넥트가 백그라운드 읽기를 지원하는지
+  Future<bool> supportsBackgroundRead() async {
+    await _configure();
+    return _health.isHealthDataInBackgroundAvailable();
+  }
+
+  Future<bool> hasBackgroundPermission() async {
+    await _configure();
+    return _health.isHealthDataInBackgroundAuthorized();
+  }
+
+  // 헬스 커넥트 권한 화면을 띄움. 결과는 hasBackgroundPermission() 으로 다시 확인
+  Future<void> requestBackgroundPermission() async {
+    await _configure();
+    await _health.requestHealthDataInBackgroundAuthorization();
+  }
+
   // 지금부터의 변경(삭제)을 추적할 토큰. 권한이 없으면 null
   Future<String?> newChangesToken() async {
     await _configure();

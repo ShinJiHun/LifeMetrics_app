@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../models/athlete_section.dart';
 import '../../../models/health_snapshot.dart';
 import '../../../services/api_client.dart';
+import '../../../services/health_auto_sync.dart';
 import '../../../services/health_service.dart';
 import '../../../services/health_sync_service.dart';
 import '../../../utils/format.dart';
@@ -11,10 +12,16 @@ import '../../../utils/format.dart';
 // 삼성헬스: 헬스 커넥트에 동기화된 오늘 수치 + 어제 식사 + 최근 7일 걸음 · 수면
 // + 서버(lifemetrics)로 올리기
 class SamsungHealthScreen extends StatefulWidget {
-  const SamsungHealthScreen({super.key, this.service, this.syncService});
+  const SamsungHealthScreen({
+    super.key,
+    this.service,
+    this.syncService,
+    this.autoSync = const HealthAutoSync(),
+  });
 
   final HealthService? service;
   final HealthSyncService? syncService;
+  final HealthAutoSync autoSync;
 
   @override
   State<SamsungHealthScreen> createState() => _SamsungHealthScreenState();
@@ -33,14 +40,32 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
   String? _error;
   bool _syncing = false;
   DateTime? _lastSync;
+  bool _autoOn = false;
+  bool _autoBusy = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _load();
-    _sync.lastSyncedAt().then((t) {
-      if (mounted) setState(() => _lastSync = t);
+    _loadSyncState();
+  }
+
+  // 자동 동기화가 앱 밖에서 돌았거나 권한이 회수됐을 수 있어 돌아올 때마다 다시 읽음
+  Future<void> _loadSyncState() async {
+    final last = await _sync.lastSyncedAt();
+    var auto = false;
+    try {
+      auto =
+          await widget.autoSync.isScheduled() &&
+          await _service.hasBackgroundPermission();
+    } catch (e) {
+      debugPrint('자동 동기화 상태 확인 실패: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _lastSync = last;
+      _autoOn = auto;
     });
   }
 
@@ -53,6 +78,7 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
   // 헬스 커넥트 설치 · 권한 화면에서 돌아오면 상태를 다시 확인
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadSyncState();
     if (state == AppLifecycleState.resumed &&
         _status != HealthStatus.ready &&
         _status != HealthStatus.unsupported) {
@@ -115,6 +141,46 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
       show('동기화하지 못했어요');
     } finally {
       if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  // 켤 때 필요한 권한을 차례로 받고 예약. 하나라도 거절하면 켜지 않음
+  Future<void> _setAuto(bool on) async {
+    final messenger = ScaffoldMessenger.of(context);
+    void show(String text) =>
+        messenger.showSnackBar(SnackBar(content: Text(text)));
+
+    setState(() => _autoBusy = true);
+    try {
+      if (!on) {
+        await widget.autoSync.disable();
+      } else {
+        if (!await _service.supportsBackgroundRead()) {
+          show('이 기기의 헬스 커넥트는 백그라운드 읽기를 지원하지 않아요');
+          return;
+        }
+        if (!await _service.hasSyncPermissions()) {
+          await _service.requestAuthorization();
+          if (!await _service.hasSyncPermissions()) {
+            show('식사 · 운동 · 거리 · 칼로리 읽기 권한을 허용해야 켤 수 있어요');
+            return;
+          }
+        }
+        if (!await _service.hasBackgroundPermission()) {
+          await _service.requestBackgroundPermission();
+          if (!await _service.hasBackgroundPermission()) {
+            show('백그라운드 읽기 권한을 허용해야 켤 수 있어요');
+            return;
+          }
+        }
+        await widget.autoSync.enable();
+      }
+      if (mounted) setState(() => _autoOn = on);
+    } catch (e) {
+      debugPrint('자동 동기화 설정 실패: $e');
+      show('자동 동기화를 설정하지 못했어요');
+    } finally {
+      if (mounted) setState(() => _autoBusy = false);
     }
   }
 
@@ -194,6 +260,8 @@ class _SamsungHealthScreenState extends State<SamsungHealthScreen>
           lastSync: _lastSync,
           color: _color,
           onSync: _syncNow,
+          autoOn: _autoOn,
+          onAutoChanged: _autoBusy ? null : _setAuto,
         ),
         const SizedBox(height: 20),
         _Label('오늘'),
@@ -312,6 +380,8 @@ class _SyncCard extends StatelessWidget {
     required this.lastSync,
     required this.color,
     required this.onSync,
+    required this.autoOn,
+    required this.onAutoChanged,
   });
 
   final bool configured;
@@ -319,6 +389,8 @@ class _SyncCard extends StatelessWidget {
   final DateTime? lastSync;
   final Color color;
   final VoidCallback onSync;
+  final bool autoOn;
+  final ValueChanged<bool>? onAutoChanged; // 설정 중엔 null
 
   @override
   Widget build(BuildContext context) {
@@ -335,38 +407,58 @@ class _SyncCard extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Icon(Icons.cloud_upload_outlined, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '서버 동기화',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+          Row(
+            children: [
+              Icon(Icons.cloud_upload_outlined, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '서버 동기화',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(status, style: TextStyle(color: muted, fontSize: 12)),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(status, style: TextStyle(color: muted, fontSize: 12)),
-              ],
-            ),
-          ),
-          if (syncing)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            )
-          else
-            FilledButton(
-              onPressed: configured ? onSync : null,
-              style: FilledButton.styleFrom(backgroundColor: color),
-              child: const Text('지금 올리기'),
-            ),
+              if (syncing)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                FilledButton(
+                  onPressed: configured ? onSync : null,
+                  style: FilledButton.styleFrom(backgroundColor: color),
+                  child: const Text('지금 올리기'),
+                ),
+            ],
+          ),
+          Row(
+            children: [
+              const SizedBox(width: 36),
+              Expanded(
+                child: Text(
+                  '하루 1회 자동으로 올리기',
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+              ),
+              Switch(
+                value: autoOn,
+                activeThumbColor: color,
+                onChanged: configured ? onAutoChanged : null,
+              ),
+            ],
+          ),
         ],
       ),
     );

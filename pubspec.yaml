@@ -41,6 +41,7 @@ dependencies:
   latlong2: ^0.10.1
   image_picker: ^1.2.4
   health: ^13.3.2
+  workmanager: ^0.10.10
 dev_dependencies:
   flutter_test:
     sdk: flutter

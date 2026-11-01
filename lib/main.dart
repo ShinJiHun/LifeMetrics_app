@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
+import 'services/health_auto_sync.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  HealthAutoSync.initialize().catchError(
+    (Object e) => debugPrint('자동 동기화 초기화 실패: $e'),
+  );
   runApp(const MyApp());
 }
 

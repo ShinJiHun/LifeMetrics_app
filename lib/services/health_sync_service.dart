@@ -7,6 +7,11 @@ import '../models/health_sync.dart';
 import 'api_client.dart';
 import 'health_service.dart';
 
+// 서버가 요청 자체를 거부함(토큰 · 데이터 형식). 그대로 다시 보내도 결과가 같음
+class HealthSyncRejected extends ApiException {
+  const HealthSyncRejected(super.message);
+}
+
 // 서버의 HEALTH_SYNC_TOKEN 과 같은 값. env.json 에 넣고 --dart-define-from-file=env.json 으로 빌드
 const healthSyncToken = String.fromEnvironment('HEALTH_SYNC_TOKEN');
 
@@ -35,7 +40,7 @@ class HealthSyncService {
 
   // 이 폰에서 마지막으로 동기화에 성공한 시각
   Future<DateTime?> lastSyncedAt() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _freshPrefs();
     final s = prefs.getString(_lastSyncKey);
     return s == null ? null : DateTime.tryParse(s);
   }
@@ -44,7 +49,7 @@ class HealthSyncService {
     if (!configured) {
       throw const ApiException('앱에 동기화 토큰(HEALTH_SYNC_TOKEN)이 없어요');
     }
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _freshPrefs();
 
     // 데이터를 읽기 전에 토큰부터 잡아야 읽는 사이에 지워진 기록도 다음 번에 잡힘
     final saved = prefs.getString(_changesTokenKey);
@@ -57,6 +62,12 @@ class HealthSyncService {
       now: now,
     )).withDeleted(changes?.ids ?? const []);
 
+    // 플러그인은 읽기 실패를 빈 결과로 돌려주고, 서버는 받은 값으로 그날 수치를 덮어씀.
+    // 며칠 치가 통째로 비었으면 서버 데이터를 지우지 않도록 보내지 않음
+    if (!payload.hasData) {
+      throw const ApiException('헬스 커넥트에서 읽은 데이터가 없어요');
+    }
+
     final result = await _post(payload);
 
     // 서버 반영이 끝난 뒤에만 토큰을 넘겨야 실패 시 삭제 목록을 다시 보낼 수 있음
@@ -66,6 +77,13 @@ class HealthSyncService {
       (now ?? DateTime.now()).toIso8601String(),
     );
     return result;
+  }
+
+  // 자동 동기화는 별도 엔진에서 돌아서 이 엔진의 저장소 캐시가 옛값일 수 있음
+  Future<SharedPreferences> _freshPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs;
   }
 
   Future<HealthSyncResult> _post(HealthSyncPayload payload) async {
@@ -96,9 +114,9 @@ class HealthSyncService {
 
     return switch (res.statusCode) {
       200 => HealthSyncResult.fromJson(body()),
-      401 => throw const ApiException('동기화 토큰이 서버와 맞지 않아요'),
+      401 => throw const HealthSyncRejected('동기화 토큰이 서버와 맞지 않아요'),
       503 => throw const ApiException('서버에 동기화 토큰이 설정되지 않았어요'),
-      400 => throw ApiException(
+      400 => throw HealthSyncRejected(
         body()['message'] as String? ?? '보낸 데이터 형식이 맞지 않아요',
       ),
       final code => throw ApiException('서버 오류가 났어요 ($code)'),

@@ -169,6 +169,21 @@ class HealthSyncPayload {
   final List<SyncExercise> exercises;
   final List<String> deletedIds; // 폰에서 지워진 식단 · 운동 레코드 id
 
+  // 읽어 온 수치가 하나라도 있는지. 삭제 목록은 읽기 성공의 증거가 아니라서 보지 않음
+  bool get hasData =>
+      nutrition.isNotEmpty ||
+      exercises.isNotEmpty ||
+      days.any(
+        (d) =>
+            (d.steps ?? 0) != 0 ||
+            d.distanceM != null ||
+            d.activeKcal != null ||
+            d.totalKcal != null ||
+            d.exerciseMinutes != null ||
+            d.sleepMinutes != null ||
+            d.restingHeartRate != null,
+      );
+
   HealthSyncPayload withDeleted(List<String> ids) => HealthSyncPayload(
     device: device,
     days: days,

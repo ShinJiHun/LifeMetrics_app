@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lifemetrics_app/models/health_snapshot.dart';
 import 'package:lifemetrics_app/screens/athlete/body/samsung_health_screen.dart';
 import 'package:lifemetrics_app/models/health_sync.dart';
+import 'package:lifemetrics_app/services/health_auto_sync.dart';
 import 'package:lifemetrics_app/services/health_service.dart';
 import 'package:lifemetrics_app/services/health_sync_service.dart';
 
@@ -33,6 +34,35 @@ class _FakeHealth extends HealthService {
 
   @override
   Future<bool> hasSyncPermissions() async => syncPermitted;
+
+  bool backgroundSupported = true;
+  bool backgroundPermitted = false;
+  bool grantBackgroundOnRequest = true;
+
+  @override
+  Future<bool> supportsBackgroundRead() async => backgroundSupported;
+
+  @override
+  Future<bool> hasBackgroundPermission() async => backgroundPermitted;
+
+  @override
+  Future<void> requestBackgroundPermission() async {
+    backgroundPermitted = grantBackgroundOnRequest;
+  }
+}
+
+// WorkManager 대신 예약 여부만 기억함
+class _FakeAuto extends HealthAutoSync {
+  bool scheduled = false;
+
+  @override
+  Future<bool> isScheduled() async => scheduled;
+
+  @override
+  Future<void> enable() async => scheduled = true;
+
+  @override
+  Future<void> disable() async => scheduled = false;
 }
 
 // 서버 대신 정해진 결과를 돌려줌
@@ -66,6 +96,7 @@ void main() {
     WidgetTester tester,
     HealthService service, {
     HealthSyncService? sync,
+    HealthAutoSync? auto,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -73,7 +104,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(brightness: Brightness.dark),
-        home: SamsungHealthScreen(service: service, syncService: sync),
+        home: SamsungHealthScreen(
+          service: service,
+          syncService: sync,
+          autoSync: auto ?? _FakeAuto(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -230,5 +265,65 @@ void main() {
       find.widgetWithText(FilledButton, '지금 올리기'),
     );
     expect(button.onPressed, isNull);
+  });
+
+  group('자동 동기화 스위치', () {
+    Switch sw(WidgetTester t) => t.widget<Switch>(find.byType(Switch));
+
+    testWidgets('켜면 백그라운드 권한을 받고 예약, 끄면 취소', (tester) async {
+      final health = _FakeHealth(HealthStatus.ready, snapshot);
+      final auto = _FakeAuto();
+      await pump(tester, health, sync: _FakeSync(health), auto: auto);
+      expect(sw(tester).value, isFalse);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(health.backgroundPermitted, isTrue);
+      expect(auto.scheduled, isTrue);
+      expect(sw(tester).value, isTrue);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(auto.scheduled, isFalse);
+      expect(sw(tester).value, isFalse);
+    });
+
+    testWidgets('백그라운드 권한을 거절하면 예약하지 않음', (tester) async {
+      final health = _FakeHealth(HealthStatus.ready, snapshot)
+        ..grantBackgroundOnRequest = false;
+      final auto = _FakeAuto();
+      await pump(tester, health, sync: _FakeSync(health), auto: auto);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(auto.scheduled, isFalse);
+      expect(sw(tester).value, isFalse);
+      expect(find.text('백그라운드 읽기 권한을 허용해야 켤 수 있어요'), findsOneWidget);
+    });
+
+    testWidgets('지원하지 않는 기기면 예약하지 않음', (tester) async {
+      final health = _FakeHealth(HealthStatus.ready, snapshot)
+        ..backgroundSupported = false;
+      final auto = _FakeAuto();
+      await pump(tester, health, sync: _FakeSync(health), auto: auto);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(auto.scheduled, isFalse);
+    });
+
+    testWidgets('예약돼 있어도 권한이 회수됐으면 꺼진 것으로 보여줌', (tester) async {
+      final health = _FakeHealth(HealthStatus.ready, snapshot);
+      await pump(
+        tester,
+        health,
+        sync: _FakeSync(health),
+        auto: _FakeAuto()..scheduled = true,
+      );
+
+      expect(sw(tester).value, isFalse);
+    });
   });
 }

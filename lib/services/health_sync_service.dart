@@ -53,20 +53,27 @@ class HealthSyncService {
 
     // 데이터를 읽기 전에 토큰부터 잡아야 읽는 사이에 지워진 기록도 다음 번에 잡힘
     final saved = prefs.getString(_changesTokenKey);
-    final changes = saved == null ? null : await _health.deletedSince(saved);
+    final changes = saved == null ? null : await _health.changesSince(saved);
     final nextToken = changes?.nextToken ?? await _health.newChangesToken();
 
     final first = prefs.getString(_lastSyncKey) == null;
-    final payload = (await _health.collectForSync(
+    final collected = (await _health.collectForSync(
       dayCount: first ? firstSyncDays : syncDays,
       now: now,
-    )).withDeleted(changes?.ids ?? const []);
+    )).withDeleted(changes?.deletedIds ?? const []);
 
     // 플러그인은 읽기 실패를 빈 결과로 돌려주고, 서버는 받은 값으로 그날 수치를 덮어씀.
     // 며칠 치가 통째로 비었으면 서버 데이터를 지우지 않도록 보내지 않음
-    if (!payload.hasData) {
+    if (!collected.hasData) {
       throw const ApiException('헬스 커넥트에서 읽은 데이터가 없어요');
     }
+
+    // 지난 동기화 이후 새로 생기거나 고쳐진 식단 · 운동만 보냄 (이미 보낸 건 건너뜀).
+    // 처음이거나 토큰이 만료됐거나 고쳐진 기록을 다 모르면 범위 안 전부를 보냄
+    final changedIds = changes?.changedIds;
+    final payload = changedIds == null
+        ? collected
+        : collected.onlyRecords(changedIds);
 
     final result = await _post(payload);
 

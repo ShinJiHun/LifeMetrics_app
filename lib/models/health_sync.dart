@@ -184,6 +184,21 @@ class HealthSyncPayload {
             d.restingHeartRate != null,
       );
 
+  // 식단 · 운동은 [ids] 에 든 것(새로 생기거나 고쳐진 기록)만 남김. 하루 합계(days)는 그대로
+  HealthSyncPayload onlyRecords(Set<String> ids) => HealthSyncPayload(
+    device: device,
+    days: days,
+    nutrition: [
+      for (final n in nutrition)
+        if (ids.contains(n.id)) n,
+    ],
+    exercises: [
+      for (final e in exercises)
+        if (ids.contains(e.id)) e,
+    ],
+    deletedIds: deletedIds,
+  );
+
   HealthSyncPayload withDeleted(List<String> ids) => HealthSyncPayload(
     device: device,
     days: days,

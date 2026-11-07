@@ -15,7 +15,7 @@ import 'package:lifemetrics_app/services/health_sync_service.dart';
 class _FakeHealth extends HealthService {
   _FakeHealth({this.deleted});
 
-  final ({List<String> ids, String nextToken})? deleted;
+  final HealthChanges? deleted;
   int? requestedDays;
   String? askedToken;
 
@@ -23,9 +23,7 @@ class _FakeHealth extends HealthService {
   Future<String?> newChangesToken() async => 'fresh';
 
   @override
-  Future<({List<String> ids, String nextToken})?> deletedSince(
-    String token,
-  ) async {
+  Future<HealthChanges?> changesSince(String token) async {
     askedToken = token;
     return deleted;
   }
@@ -46,6 +44,13 @@ class _FakeHealth extends HealthService {
           mealType: 'BREAKFAST',
           name: '바나나',
           energyKcal: 93,
+        ),
+        SyncNutrition(
+          id: 'n2',
+          startTime: DateTime(2026, 11, 1, 12, 30),
+          mealType: 'LUNCH',
+          name: '김밥',
+          energyKcal: 480,
         ),
       ],
     );
@@ -141,7 +146,9 @@ void main() {
         'health_sync_changes_token': 'old',
         'health_sync_last_at': '2026-10-31T21:00:00.000',
       });
-      final health = _FakeHealth(deleted: (ids: ['gone-1'], nextToken: 'next'));
+      final health = _FakeHealth(
+        deleted: (deletedIds: ['gone-1'], changedIds: null, nextToken: 'next'),
+      );
       final sync = HealthSyncService(
         health: health,
         client: server(200, {
@@ -163,13 +170,101 @@ void main() {
       expect(prefs.getString('health_sync_changes_token'), 'next');
     });
 
+    test('지난번 이후 새로 생기거나 고쳐진 식단만 보내고 하루 합계는 그대로 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_changes_token': 'old',
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      final sync = HealthSyncService(
+        health: _FakeHealth(
+          deleted: (
+            deletedIds: const [],
+            changedIds: {'n2'},
+            nextToken: 'next',
+          ),
+        ),
+        client: server(200, {
+          'days': 7,
+          'nutrition': 1,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      );
+
+      await sync.sync();
+
+      final body = jsonDecode(sent!.body) as Map;
+      expect([for (final n in body['nutrition']) n['id']], ['n2']);
+      expect(body['days'], hasLength(1));
+    });
+
+    test('바뀐 게 없으면 식단은 비우고 하루 합계만 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_changes_token': 'old',
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      final sync = HealthSyncService(
+        health: _FakeHealth(
+          deleted: (
+            deletedIds: const [],
+            changedIds: <String>{},
+            nextToken: 'next',
+          ),
+        ),
+        client: server(200, {
+          'days': 7,
+          'nutrition': 0,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      );
+
+      await sync.sync();
+
+      final body = jsonDecode(sent!.body) as Map;
+      expect(body['nutrition'], isEmpty);
+      expect(body['days'], hasLength(1));
+    });
+
+    test('고쳐진 기록을 다 모르면(changedIds null) 범위 안 식단을 전부 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_changes_token': 'old',
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      final sync = HealthSyncService(
+        health: _FakeHealth(
+          deleted: (deletedIds: const [], changedIds: null, nextToken: 'next'),
+        ),
+        client: server(200, {
+          'days': 7,
+          'nutrition': 2,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      );
+
+      await sync.sync();
+
+      final body = jsonDecode(sent!.body) as Map;
+      expect([for (final n in body['nutrition']) n['id']], ['n1', 'n2']);
+    });
+
     test('서버가 거절하면 토큰을 넘기지 않아 삭제 목록을 다시 보낼 수 있음', () async {
       SharedPreferences.setMockInitialValues({
         'health_sync_changes_token': 'old',
         'health_sync_last_at': '2026-10-31T21:00:00.000',
       });
       final sync = HealthSyncService(
-        health: _FakeHealth(deleted: (ids: ['gone-1'], nextToken: 'next')),
+        health: _FakeHealth(
+          deleted: (
+            deletedIds: ['gone-1'],
+            changedIds: null,
+            nextToken: 'next',
+          ),
+        ),
         client: server(401, {'message': 'nope'}),
         token: 'wrong',
       );

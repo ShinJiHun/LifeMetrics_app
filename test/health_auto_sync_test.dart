@@ -27,9 +27,8 @@ class _FakeHealth extends HealthService {
   Future<String?> newChangesToken() async => 'fresh';
 
   @override
-  Future<({List<String> ids, String nextToken})?> deletedSince(
-    String token,
-  ) async => (ids: const ['gone'], nextToken: 'next');
+  Future<HealthChanges?> changesSince(String token) async =>
+      (deletedIds: const ['gone'], changedIds: null, nextToken: 'next');
 
   @override
   Future<HealthSyncPayload> collectForSync({

@@ -6,6 +6,14 @@ import '../models/health_sync.dart';
 
 // 안드로이드 헬스 커넥트에서 읽기 전용으로 데이터를 가져옴.
 // 삼성헬스는 설정 > 헬스 커넥트 연동을 켜 두면 걸음 · 심박 · 수면 · 체성분 · 식사를 여기에 써줌
+
+// 변경 토큰 이후의 식단 · 운동 변경 (changedIds 가 null 이면 "고쳐진 것을 다 모름")
+typedef HealthChanges = ({
+  List<String> deletedIds,
+  Set<String>? changedIds,
+  String nextToken,
+});
+
 class HealthService {
   final Health _health = Health();
   bool _configured = false;
@@ -201,13 +209,13 @@ class HealthService {
     }
   }
 
-  // [token] 이후 지워진 식단 · 운동 레코드 id 와 다음 토큰.
+  // [token] 이후 식단 · 운동의 변경: 지워진 id, 새로 생기거나 고쳐진 id, 다음 토큰.
+  // changedIds 가 null 이면 고쳐진 기록의 id 를 다 알아내지 못한 것 → 호출하는 쪽이 전부 보냄.
   // 토큰이 만료(헬스 커넥트는 약 30일)됐거나 읽지 못하면 null → 새 토큰부터 다시 시작
-  Future<({List<String> ids, String nextToken})?> deletedSince(
-    String token,
-  ) async {
+  Future<HealthChanges?> changesSince(String token) async {
     await _configure();
-    final ids = <String>[];
+    final deleted = <String>[];
+    Set<String>? changed = <String>{};
     var t = token;
     while (true) {
       final HealthChangesResponse? r;
@@ -217,11 +225,20 @@ class HealthService {
         return null;
       }
       if (r == null || r.changesTokenExpired) return null;
-      ids.addAll(r.deletedRecordIds);
+      deleted.addAll(r.deletedRecordIds);
+      for (final c in r.changes) {
+        if (c.type != HealthChangeType.upsert) continue;
+        final id = c.dataPoint?.uuid ?? c.rawDataPoint?['uuid'] as String?;
+        if (id == null || id.isEmpty) {
+          changed = null;
+        } else {
+          changed?.add(id);
+        }
+      }
       t = r.nextChangesToken;
       if (!r.hasMore) break;
     }
-    return (ids: ids, nextToken: t);
+    return (deletedIds: deleted, changedIds: changed, nextToken: t);
   }
 
   // 오늘 포함 최근 [dayCount]일을 서버로 보낼 모양으로 모음 (deletedIds 는 비어 있음)

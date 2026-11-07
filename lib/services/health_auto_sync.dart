@@ -48,18 +48,32 @@ Future<bool> runHealthAutoSync({
   }
 }
 
-// 하루 1회 자동 동기화 예약
+// 다음 한국 시각 00:00 까지 남은 시간. 서버 일일 분석(01:30 KST, 전날 분)보다 먼저 하루치가 올라가게 한다.
+Duration delayUntilNextKstMidnight(DateTime now) {
+  final kst = now.toUtc().add(const Duration(hours: 9));
+  final nextMidnightKst = DateTime.utc(kst.year, kst.month, kst.day + 1);
+  return nextMidnightKst.difference(kst);
+}
+
+// 하루 1회 자동 동기화 예약 (한국 시각 00시 무렵. 안드로이드가 절전 상태면 조금 늦게 돌 수 있음)
 class HealthAutoSync {
   const HealthAutoSync();
 
-  static const _uniqueName = 'health-sync-daily';
+  static const _uniqueName = 'health-sync-daily-kst0';
+  // 예전 이름: 켠 시각 기준으로 하루마다 돌던 작업. 앱을 켤 때 00시 작업으로 갈아 끼운다
+  static const _legacyUniqueName = 'health-sync-daily';
 
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   // 앱 업데이트 뒤에도 콜백을 찾을 수 있도록 앱을 켤 때마다 등록
   static Future<void> initialize() async {
-    if (_supported) await Workmanager().initialize(healthAutoSyncDispatcher);
+    if (!_supported) return;
+    await Workmanager().initialize(healthAutoSyncDispatcher);
+    if (await Workmanager().isScheduledByUniqueName(_legacyUniqueName)) {
+      await Workmanager().cancelByUniqueName(_legacyUniqueName);
+      await const HealthAutoSync().enable();
+    }
   }
 
   Future<bool> isScheduled() async =>
@@ -69,6 +83,7 @@ class HealthAutoSync {
     _uniqueName,
     _taskName,
     frequency: const Duration(days: 1),
+    initialDelay: delayUntilNextKstMidnight(DateTime.now()),
     constraints: Constraints(networkType: NetworkType.connected),
     existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     backoffPolicy: BackoffPolicy.exponential,

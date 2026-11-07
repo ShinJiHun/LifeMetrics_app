@@ -130,4 +130,29 @@ void main() {
       throwsA(isA<ApiException>()),
     );
   });
+
+  group('delayUntilNextKstMidnight', () {
+    test('KST 21:25 이면 2시간 35분 뒤', () {
+      // 2026-11-07 21:25 KST = 12:25 UTC
+      expect(
+        delayUntilNextKstMidnight(DateTime.utc(2026, 11, 7, 12, 25)),
+        const Duration(hours: 2, minutes: 35),
+      );
+    });
+
+    test('KST 00:00 정각이면 하루 뒤', () {
+      expect(
+        delayUntilNextKstMidnight(DateTime.utc(2026, 11, 6, 15)),
+        const Duration(days: 1),
+      );
+    });
+
+    test('UTC 날짜가 하루 앞서 있어도 KST 기준으로 계산', () {
+      // 2026-11-30 23:00 UTC = 12-01 08:00 KST → 12-02 00:00 KST 까지 16시간
+      expect(
+        delayUntilNextKstMidnight(DateTime.utc(2026, 11, 30, 23)),
+        const Duration(hours: 16),
+      );
+    });
+  });
 }

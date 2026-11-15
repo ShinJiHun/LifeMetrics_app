@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../screens/athlete/body/inbody_screen.dart';
 import '../screens/athlete/body/samsung_health_screen.dart';
 import '../screens/athlete/fitness/workout_history_screen.dart';
-import '../screens/athlete/fitness/workout_input_screen.dart';
+import '../screens/athlete/fitness/workout_input_entry.dart';
 import '../screens/athlete/fitness/workout_recommend_screen.dart';
 import '../screens/athlete/riding/ride_feed_screen.dart';
 
@@ -13,12 +13,15 @@ class SectionMenu {
     required this.description,
     required this.icon,
     this.builder,
+    this.onOpen,
   });
 
   final String title;
   final String description;
   final IconData icon;
   final Widget Function()? builder; // null 이면 준비 중 화면
+  // 화면을 바로 여는 대신 할 동작 (예: 입력 방식 고르기). 있으면 builder 보다 먼저
+  final Future<void> Function(BuildContext context)? onOpen;
 }
 
 // 애슬리트 페르소나의 4개 파트와 파트별 하위 메뉴
@@ -66,7 +69,7 @@ enum AthleteSection {
         title: '입력',
         description: '오늘의 운동을 입력해요',
         icon: Icons.edit_note,
-        builder: WorkoutInputScreen.new,
+        onOpen: openWorkoutInput,
       ),
       SectionMenu(
         title: '기록',

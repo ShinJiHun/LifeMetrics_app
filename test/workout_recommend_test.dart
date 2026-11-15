@@ -177,7 +177,18 @@ void main() {
     expect(find.text('1. 바벨 벤치 프레스'), findsOneWidget);
     expect(find.text('62.5kg × 10회 × 4세트'), findsOneWidget);
 
-    await tester.tap(find.text('이대로 운동 입력하기'));
+    // 버튼은 하단 고정이 아니라 목록 안, 마지막 추천 카드 바로 아래
+    final button = find.descendant(
+      of: find.byType(ListView),
+      matching: find.text('이대로 입력하기'),
+    );
+    expect(button, findsOneWidget);
+    expect(find.text('오늘 추천 저장'), findsOneWidget);
+    expect(
+      tester.getTopLeft(button).dy,
+      greaterThan(tester.getBottomLeft(find.text('1. 바벨 벤치 프레스')).dy),
+    );
+    await tester.tap(find.text('이대로 입력하기'));
     await tester.pumpAndSettle();
     expect(find.byType(WorkoutInputScreen), findsOneWidget);
     expect(find.text('4세트'), findsOneWidget);

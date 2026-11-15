@@ -30,13 +30,15 @@ class AthleteSectionScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             child: InkWell(
               borderRadius: BorderRadius.circular(18),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      menu.builder?.call() ??
-                      MenuPlaceholderScreen(menu: menu, color: color),
-                ),
-              ),
+              onTap: () => menu.onOpen != null
+                  ? menu.onOpen!(context)
+                  : Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            menu.builder?.call() ??
+                            MenuPlaceholderScreen(menu: menu, color: color),
+                      ),
+                    ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(

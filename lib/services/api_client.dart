@@ -137,5 +137,11 @@ Object? _decodeAdminResponse(http.Response res) {
     throw ApiException('서버 오류가 났어요 (${res.statusCode})');
   }
   final text = utf8.decode(res.bodyBytes);
-  return text.trim().isEmpty ? null : jsonDecode(text);
+  if (text.trim().isEmpty) return null;
+  // /api/exercise/log 처럼 '저장 완료' 같은 글자만 주는 API 도 있어 JSON 이 아니면 글자 그대로
+  try {
+    return jsonDecode(text);
+  } on FormatException {
+    return text;
+  }
 }

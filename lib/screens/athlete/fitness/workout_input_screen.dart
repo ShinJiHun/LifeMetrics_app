@@ -2,21 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../models/athlete_section.dart';
+import '../../../models/today_plan.dart';
 import '../../../models/workout.dart';
 import '../../../services/api_client.dart';
 import '../../../services/fitness_api.dart';
 import '../../../utils/format.dart';
+import '../../../widgets/bottom_action_bar.dart';
 import '../../../widgets/admin_login_dialog.dart';
+import 'cardio_actual_card.dart';
 import 'exercise_picker_sheet.dart';
+import 'workout_recommend_screen.dart' show ExerciseGif;
 
-// 피트니스 입력: 날짜 · PT 여부 → 운동 종목 고르기 → 세트별 무게 × 횟수 → 저장
+// 피트니스 입력: 날짜 · PT 여부 → 운동 종목 고르기 → 세트별 무게 × 횟수 → 저장.
+// [plan] 이 있으면 '오늘 추천 운동 입력': 저장한 추천으로 채우고 고른 유산소 입력칸을 함께 보여줌
 class WorkoutInputScreen extends StatefulWidget {
-  const WorkoutInputScreen({super.key, this.api, this.now, this.initial});
+  const WorkoutInputScreen({
+    super.key,
+    this.api,
+    this.now,
+    this.initial,
+    this.plan,
+  });
 
   final FitnessApi? api;
   final DateTime? now; // 테스트에서 '오늘' 고정용
-  // 미리 채워 둘 운동과 세트 (오늘 운동 추천에서 넘어올 때)
+  // 미리 채워 둘 운동과 세트 (추천 화면의 '이대로 입력하기')
   final List<(ExerciseItem, List<WorkoutSet>)>? initial;
+  final TodayPlan? plan; // 저장한 오늘 추천
 
   @override
   State<WorkoutInputScreen> createState() => _WorkoutInputScreenState();
@@ -33,8 +45,25 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
     for (final (item, sets)
         in widget.initial ?? const <(ExerciseItem, List<WorkoutSet>)>[])
       _DraftExercise(item, sets: sets),
+    for (final r in widget.plan?.exercises ?? const [])
+      _DraftExercise(
+        r.item,
+        sets: [
+          for (var s = 1; s <= r.sets; s++)
+            WorkoutSet(setNumber: s, weight: r.weight, reps: r.targetReps),
+        ],
+      ),
   ];
+  late TodayPlan? _plan = widget.plan;
+  // 고른 유산소 입력칸 (적는 대로 폰에 저장해 앱을 닫아도 남음)
+  late final Map<String, TextEditingController> _cardioFields = {
+    if (_plan?.cardio case final c?)
+      for (final key in cardioFieldKeys(c))
+        key: TextEditingController(text: c.actual[key] ?? ''),
+  };
   bool _saving = false;
+
+  bool get _isEmpty => _drafts.isEmpty && _plan?.cardio == null;
 
   // 종목 목록은 처음 고를 때 한 번만 받아 둠
   Future<(List<ExerciseCategory>, List<ExerciseItem>)>? _catalog;
@@ -46,7 +75,23 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
     for (final d in _drafts) {
       d.dispose();
     }
+    for (final c in _cardioFields.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void _saveCardioDraft() {
+    final plan = _plan;
+    final cardio = plan?.cardio;
+    if (plan == null || cardio == null) return;
+    _plan = plan.copyWith(
+      cardio: cardio.withActual({
+        for (final MapEntry(:key, :value) in _cardioFields.entries)
+          if (value.text.trim().isNotEmpty) key: value.text.trim(),
+      }),
+    );
+    TodayPlanStore.save(_plan!).ignore();
   }
 
   Future<void> _pickDate() async {
@@ -105,8 +150,47 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
       return;
     }
 
-    Future<void> log() =>
-        _api.logWorkout(date: _date, isPT: _isPT, exercises: exercises);
+    // 유산소: 시간을 적어야 기록. 비어 있으면 빼고 저장할지 물음
+    final cardio = _plan?.cardio;
+    final cardioLog = cardio?.toLog();
+    if (cardio != null && cardioLog == null) {
+      final noItem = cardio.itemId == null;
+      if (exercises.isEmpty) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              noItem ? '서버에 이 유산소 종목이 없어 저장할 수 없어요' : '유산소 실제 시간(분)을 입력해 주세요',
+            ),
+          ),
+        );
+        return;
+      }
+      final skip = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(noItem ? '유산소는 저장할 수 없어요' : '유산소 시간이 비어 있어요'),
+          content: const Text('유산소는 빼고 웨이트만 저장할까요?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('돌아가기'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('웨이트만 저장'),
+            ),
+          ],
+        ),
+      );
+      if (skip != true || !mounted) return;
+    }
+
+    Future<void> log() => _api.logWorkout(
+      date: _date,
+      isPT: _isPT,
+      exercises: exercises,
+      cardio: [?cardioLog],
+    );
 
     setState(() => _saving = true);
     try {
@@ -120,6 +204,12 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
         await log();
       }
       messenger.showSnackBar(const SnackBar(content: Text('운동을 저장했어요')));
+      if (_plan case final plan?) {
+        // 오늘 추천은 기록 완료로 표시하고 화면을 닫음
+        await TodayPlanStore.save(plan.copyWith(logged: true));
+        if (mounted) Navigator.of(context).pop(true);
+        return;
+      }
       if (!mounted) return;
       setState(() {
         for (final d in _drafts) {
@@ -140,7 +230,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
-        title: const Text('운동 입력'),
+        title: Text(_plan == null ? '운동 입력' : '오늘 추천 운동 입력'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -172,6 +262,27 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
               ],
             ),
           ),
+          if (_plan?.logged ?? false)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text('오늘 추천 운동은 이미 기록했어요. 다시 저장하면 한 번 더 기록돼요'),
+            ),
+          if (_plan?.cardio case final cardio?)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: CardioActualCard(
+                cardio: cardio,
+                fields: _cardioFields,
+                color: _color,
+                enabled: true,
+                onChanged: _saveCardioDraft,
+              ),
+            ),
           for (final (i, d) in _drafts.indexed)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -196,10 +307,9 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      bottomNavigationBar: BottomActionBar(
         child: FilledButton(
-          onPressed: _drafts.isEmpty || _saving ? null : _save,
+          onPressed: _isEmpty || _saving ? null : _save,
           style: FilledButton.styleFrom(
             backgroundColor: _color,
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -210,7 +320,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(
-                  _drafts.isEmpty ? '운동을 추가해 주세요' : '저장',
+                  _isEmpty ? '운동을 추가해 주세요' : '저장',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -299,6 +409,16 @@ class _DraftCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              if (item.hasGif) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox.square(
+                    dimension: 56,
+                    child: ExerciseGif(url: item.gifUrl, cacheWidth: 168),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

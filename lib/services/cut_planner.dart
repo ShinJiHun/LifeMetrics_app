@@ -38,9 +38,36 @@ class EnergyInputs {
   final int hour; // 지금 시각(시). 저녁인데 섭취가 너무 적으면 알려줌
 }
 
+// 헬스장 유산소 기구. 서버 종목은 이름으로 찾고, 기구마다 따로 적을 설정이 다름
+enum CardioMachine {
+  treadmill(
+    ['러닝머신', '트레드밀'],
+    [('incline', '경사', '%'), ('speed', '속도', 'km/h')],
+  ),
+  cycle(
+    ['실내 사이클', '사이클', '싸이클', '바이크'],
+    [('watts', '평균 파워', 'W'), ('cadence', '케이던스', 'rpm')],
+  ),
+  stepmill(['천국의 계단', '스텝밀'], [('level', '레벨', '')]),
+  rowing(['로잉'], [('level', '저항', ''), ('pace', '500m 페이스', '')]);
+
+  const CardioMachine(this.names, this.extras);
+
+  final List<String> names; // 서버 종목 이름에 들어가는 말
+  final List<(String, String, String)> extras; // (키, 이름, 단위)
+
+  static CardioMachine? byName(String? name) {
+    for (final m in values) {
+      if (m.name == name) return m;
+    }
+    return null;
+  }
+}
+
 // 유산소 한 가지 처방
 class CardioOption {
   const CardioOption({
+    required this.machine,
     required this.name,
     required this.gifUrl,
     required this.minutes,
@@ -50,6 +77,7 @@ class CardioOption {
     this.primary = false,
   });
 
+  final CardioMachine machine;
   final String name;
   final String gifUrl;
   final int minutes;
@@ -182,6 +210,7 @@ class CutPlanner {
     final ftp = x.ftp;
     final options = <CardioOption>[
       _option(
+        CardioMachine.treadmill,
         '트레드밀 경사 걷기',
         'cardio/TREADMILL.gif',
         6.0,
@@ -191,6 +220,7 @@ class CutPlanner {
         '경사 10~12% · 속도 5~5.5km/h · 손잡이 잡지 않기',
       ),
       _option(
+        CardioMachine.cycle,
         '실내 사이클',
         'cardio/CYCLING.gif',
         6.8,
@@ -203,6 +233,7 @@ class CutPlanner {
                   '(FTP $ftp 의 56~75%) · 케이던스 85~95',
       ),
       _option(
+        CardioMachine.stepmill,
         '스텝밀',
         'cardio/STEPMILL.gif',
         9.0,
@@ -218,6 +249,7 @@ class CutPlanner {
       final m = (remaining / kcalPerMin(9.5, kg) / 5).ceil() * 5;
       options.add(
         _option(
+          CardioMachine.rowing,
           '로잉 인터벌',
           'cardio/ROWING_MACHINE.gif',
           9.5,
@@ -265,6 +297,7 @@ class CutPlanner {
   }
 
   static CardioOption _option(
+    CardioMachine machine,
     String name,
     String gif,
     double met,
@@ -273,6 +306,7 @@ class CutPlanner {
     String intensity,
     String how,
   ) => CardioOption(
+    machine: machine,
     name: name,
     gifUrl: '/api/exercise/gif/$gif',
     minutes: minutes,
@@ -282,6 +316,7 @@ class CutPlanner {
   );
 
   static CardioOption _withPrimary(CardioOption o) => CardioOption(
+    machine: o.machine,
     name: o.name,
     gifUrl: o.gifUrl,
     minutes: o.minutes,
@@ -293,6 +328,7 @@ class CutPlanner {
 
   static CardioOption _recovery(double kg) => _withPrimary(
     _option(
+      CardioMachine.treadmill,
       '트레드밀 걷기',
       'cardio/TREADMILL.gif',
       3.5,

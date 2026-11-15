@@ -15,6 +15,7 @@ import '../../../services/ride_api.dart';
 import '../../../services/workout_recommender.dart';
 import '../../../utils/format.dart';
 import 'cut_plan_view.dart';
+import '../../../models/today_plan.dart';
 import 'workout_input_screen.dart';
 
 // 오늘 운동 추천: 부위 · 목표 고르기 → GIF 와 함께 운동 · 무게 · 횟수 → 그대로 입력 화면으로
@@ -55,6 +56,7 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
   CutPlan? _cutPlan;
   EnergyInputs? _cutInputs;
   bool _planning = false;
+  TodayPlan? _savedPlan; // 오늘 이미 저장한 계획
 
   DateTime get _now => widget.now ?? DateTime.now();
 
@@ -74,6 +76,9 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
   void initState() {
     super.initState();
     _load();
+    TodayPlanStore.load(_now).then((p) {
+      if (mounted) setState(() => _savedPlan = p);
+    });
   }
 
   // 종목과 최근 3달 기록을 함께 받음. 기록은 실패해도 추천은 가능
@@ -244,6 +249,84 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
     }
   }
 
+  // 서버 종목 목록에서 유산소 기구 종목 찾기 (유산소 카테고리 우선)
+  int? _cardioItemId(CardioMachine m) {
+    final items = _items ?? const <ExerciseItem>[];
+    bool hit(ExerciseItem i) => m.names.any(i.nameKo.contains);
+    return (items.where((i) => i.categoryId == 7 && hit(i)).firstOrNull ??
+            items.where(hit).firstOrNull)
+        ?.id;
+  }
+
+  // 오늘 추천 저장: 감량이면 유산소 하나를 고르고, 확정한 계획을 오늘의 운동 화면으로
+  Future<void> _savePlan() async {
+    PlannedCardio? cardio;
+    final options = _cutPlan?.options ?? const <CardioOption>[];
+    if (_isCut && options.isNotEmpty) {
+      final picked = await showModalBottomSheet<(CardioOption?,)>(
+        context: context,
+        showDragHandle: true,
+        backgroundColor: const Color(0xFF211E36),
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              const Text(
+                '오늘 할 유산소를 골라 주세요',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '하고 나서 실제 시간 · 기기 칼로리 · 설정을 적을 수 있어요',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 12,
+                ),
+              ),
+              for (final o in options)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => Navigator.pop(context, (o,)),
+                    child: CardioCard(option: o, color: _color),
+                  ),
+                ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () => Navigator.pop(context, (null,)),
+                child: const Text('유산소 없이 저장'),
+              ),
+            ],
+          ),
+        ),
+      );
+      // 시트를 그냥 닫으면(null) 저장 취소, '유산소 없이 저장' 은 (null,)
+      if (picked == null || !mounted) return;
+      if (picked.$1 case final o?) {
+        cardio = PlannedCardio.fromOption(o, itemId: _cardioItemId(o.machine));
+      }
+    }
+
+    final now = _now;
+    final plan = TodayPlan(
+      date: DateTime(now.year, now.month, now.day),
+      goal: _goal,
+      exercises: [...?_recs?.where((r) => !r.isCardio)],
+      cardio: cardio,
+    );
+    await TodayPlanStore.save(plan);
+    if (!mounted) return;
+    // 저장만 하고 이 화면에 머묾. 입력은 피트니스 > 입력 > 오늘 추천 운동 입력에서
+    setState(() => _savedPlan = plan);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('오늘 추천을 저장했어요. 입력 > 오늘 추천 운동 입력에서 기록할 수 있어요'),
+      ),
+    );
+  }
+
   void _startInput() {
     final plan = [
       for (final r in _recs ?? const <Recommendation>[])
@@ -265,6 +348,7 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
   Widget build(BuildContext context) {
     final recs = _recs;
     final hasWeights = recs?.any((r) => !r.isCardio) ?? false;
+    final canSave = hasWeights || (_isCut && _cutPlan != null && !_planning);
 
     return Scaffold(
       appBar: AppBar(
@@ -290,6 +374,35 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
             24 + MediaQuery.viewPaddingOf(context).bottom,
           ),
           children: [
+            if (_savedPlan != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Material(
+                  color: _color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  child: ListTile(
+                    leading: Icon(Icons.event_available, color: _color),
+                    title: Text(
+                      _savedPlan!.logged ? '오늘 운동을 기록했어요' : '저장한 오늘 운동이 있어요',
+                    ),
+                    subtitle: const Text('새로 저장하면 바뀌어요'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => WorkoutInputScreen(
+                            api: widget.api,
+                            now: widget.now,
+                            plan: _savedPlan,
+                          ),
+                        ),
+                      );
+                      final p = await TodayPlanStore.load(_now);
+                      if (mounted) setState(() => _savedPlan = p);
+                    },
+                  ),
+                ),
+              ),
             _Panel(
               children: [
                 const _Label('오늘 어디 운동해요?'),
@@ -443,101 +556,125 @@ class _WorkoutRecommendScreenState extends State<WorkoutRecommendScreen> {
               for (final (i, r) in recs.indexed)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
-                  child: _RecCard(
+                  child: RecCard(
                     index: i + 1,
                     rec: r,
                     color: _color,
-                    onTap: () => _showDetail(r),
+                    onTap: () => showRecDetail(context, r, _color),
                   ),
                 ),
+            ],
+            // 저장 · 입력 버튼은 하단 고정이 아니라 목록 바로 아래 (스크롤과 함께)
+            if (canSave) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _savePlan,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _color,
+                        side: BorderSide(color: _color),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                      label: const Text(
+                        '오늘 추천 저장',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  if (hasWeights) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _startInput,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _color,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        icon: const Icon(Icons.edit_note),
+                        label: const Text(
+                          '이대로 입력하기',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ],
         ),
       },
-      bottomNavigationBar: hasWeights
-          ? SafeArea(
-              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: FilledButton.icon(
-                onPressed: _startInput,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _color,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                icon: const Icon(Icons.edit_note),
-                label: const Text(
-                  '이대로 운동 입력하기',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-            )
-          : null,
     );
   }
+}
 
-  void _showDetail(Recommendation r) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: const Color(0xFF211E36),
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.8,
-        maxChildSize: 0.95,
-        builder: (context, controller) => ListView(
-          controller: controller,
-          padding: EdgeInsets.fromLTRB(
-            20,
-            0,
-            20,
-            24 + MediaQuery.viewPaddingOf(context).bottom,
+// 추천 1개 자세히: 큰 GIF · 계획 · 설명
+void showRecDetail(BuildContext context, Recommendation r, Color color) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: const Color(0xFF211E36),
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.8,
+      maxChildSize: 0.95,
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          24 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: ExerciseGif(url: r.item.gifUrl),
+            ),
           ),
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: ExerciseGif(url: r.item.gifUrl),
-              ),
-            ),
-            const SizedBox(height: 16),
+          const SizedBox(height: 16),
+          Text(
+            r.item.nameKo,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          if (r.item.nameEn != null)
             Text(
-              r.item.nameKo,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              r.item.nameEn!,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
             ),
-            if (r.item.nameEn != null)
-              Text(
-                r.item.nameEn!,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-              ),
-            const SizedBox(height: 12),
-            Text(
-              planText(r),
-              style: TextStyle(
-                color: _color,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
+          const SizedBox(height: 12),
+          Text(
+            planText(r),
+            style: TextStyle(
+              color: color,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
             ),
-            if (r.restSec != null)
-              Text(
-                '세트 사이 휴식 ${r.restSec}초',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-              ),
-            const SizedBox(height: 6),
+          ),
+          if (r.restSec != null)
             Text(
-              r.reason,
+              '세트 사이 휴식 ${r.restSec}초',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
-            if (r.item.description != null) ...[
-              const SizedBox(height: 16),
-              Text(r.item.description!, style: const TextStyle(height: 1.5)),
-            ],
+          const SizedBox(height: 6),
+          Text(
+            r.reason,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+          ),
+          if (r.item.description != null) ...[
+            const SizedBox(height: 16),
+            Text(r.item.description!, style: const TextStyle(height: 1.5)),
           ],
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 // '40kg × 10회 × 4세트', '맨몸 12~20회 × 3세트', '20분'
@@ -597,8 +734,10 @@ class ExerciseGif extends StatelessWidget {
   }
 }
 
-class _RecCard extends StatelessWidget {
-  const _RecCard({
+// 추천 운동 카드 (GIF · 계획 · 이유)
+class RecCard extends StatelessWidget {
+  const RecCard({
+    super.key,
     required this.index,
     required this.rec,
     required this.color,

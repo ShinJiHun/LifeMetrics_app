@@ -63,12 +63,16 @@ class FitnessApi {
     required DateTime date,
     required bool isPT,
     required List<WorkoutExercise> exercises,
+    List<CardioLog> cardio = const [],
   }) => postJson(_client, '/api/exercise/log', {
     'sessionDate':
         '${date.year}-${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}',
     'userId': apiUserId,
     'isPT': isPT,
-    'exercises': [for (final e in exercises) e.toLogJson()],
+    'exercises': [
+      for (final e in exercises) e.toLogJson(),
+      for (final c in cardio) c.toLogJson(),
+    ],
   });
 }

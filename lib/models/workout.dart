@@ -41,6 +41,17 @@ class ExerciseItem {
 
   bool get hasGif => gifUrl != null && gifUrl!.isNotEmpty;
 
+  // 오늘 계획을 폰에 저장할 때 (fromJson 과 같은 키)
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'categoryId': categoryId,
+    'nameKo': nameKo,
+    'nameEn': nameEn,
+    'equipmentType': equipmentType,
+    'description': description,
+    'gifUrl': gifUrl,
+  };
+
   // 웹 대시보드와 같은 한글 이름
   String? get equipmentLabel => switch (equipmentType) {
     'FREE_WEIGHT' => '프리웨이트',
@@ -116,6 +127,37 @@ class WorkoutExercise {
     'restTimeSec': 60,
     'memo': memo,
     'sets': [for (final s in sets) s.toJson()],
+  };
+}
+
+// 유산소 1건. 서버는 durationMin 이 있으면 세트 대신 시간 · 거리 · 칼로리 · 심박으로 저장
+class CardioLog {
+  const CardioLog({
+    required this.exerciseItemId,
+    required this.minutes,
+    required this.name,
+    this.distanceKm,
+    this.kcal,
+    this.avgHr,
+    this.memo,
+  });
+
+  final int exerciseItemId;
+  final String name; // 화면 표시용
+  final double minutes;
+  final double? distanceKm;
+  final int? kcal; // 기기에 나온 값
+  final int? avgHr;
+  final String? memo; // 경사 · 속도 · 레벨 같은 기기 설정
+
+  Map<String, dynamic> toLogJson() => {
+    'exerciseItemId': exerciseItemId,
+    'durationMin': minutes,
+    'distanceKm': distanceKm,
+    'kcal': kcal,
+    'avgHr': avgHr,
+    'memo': memo,
+    'sets': const [],
   };
 }
 

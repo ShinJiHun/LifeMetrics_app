@@ -2,7 +2,8 @@
 enum RideType {
   touring('TOURING', '투어링'),
   brevet('BREVET', '브레베'),
-  permanent('PERMANENT', '퍼머넌트');
+  permanent('PERMANENT', '퍼머넌트'),
+  ddareungi('DDAREUNGI', '따릉이'); // 이용내역 캡처로 올린 공공자전거 기록
 
   const RideType(this.code, this.label);
 

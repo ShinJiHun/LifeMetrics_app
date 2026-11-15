@@ -4,6 +4,7 @@ import '../screens/athlete/body/inbody_screen.dart';
 import '../screens/athlete/body/samsung_health_screen.dart';
 import '../screens/athlete/fitness/workout_history_screen.dart';
 import '../screens/athlete/fitness/workout_input_screen.dart';
+import '../screens/athlete/fitness/workout_recommend_screen.dart';
 import '../screens/athlete/riding/ride_feed_screen.dart';
 
 class SectionMenu {
@@ -50,11 +51,17 @@ enum AthleteSection {
   ),
   fitness(
     title: '피트니스 기록',
-    subtitle: '입력 · 기록',
+    subtitle: '추천 · 기록',
     description: '웨이트와 트레이닝을 기록해요',
     icon: Icons.fitness_center,
     color: Color(0xFFFF7A45),
     menus: [
+      SectionMenu(
+        title: '오늘 운동 추천',
+        description: '부위를 고르면 운동 · 무게 · 횟수를 추천해요',
+        icon: Icons.auto_awesome,
+        builder: WorkoutRecommendScreen.new,
+      ),
       SectionMenu(
         title: '입력',
         description: '오늘의 운동을 입력해요',

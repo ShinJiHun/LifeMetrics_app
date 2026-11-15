@@ -32,6 +32,7 @@ class HealthSnapshot {
     this.bodyFat,
     this.weighedAt,
     this.yesterdayMeals = const [],
+    this.todayMeals = const [],
     this.mealsAuthorized = true,
     this.sources = const {},
   });
@@ -41,6 +42,7 @@ class HealthSnapshot {
   final double? bodyFat; // %
   final DateTime? weighedAt;
   final List<Meal> yesterdayMeals; // 시간 오름차순
+  final List<Meal> todayMeals; // 지금까지 먹은 것, 시간 오름차순
   final bool mealsAuthorized; // 식사(영양) 읽기 권한
   final Set<String> sources; // 데이터를 쓴 앱 패키지 이름
 

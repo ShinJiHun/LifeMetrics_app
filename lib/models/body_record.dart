@@ -123,3 +123,44 @@ enum BodyPeriod {
     return records.where((r) => !r.date.isBefore(from)).toList();
   }
 }
+
+// GET /api/body/goals/current + /api/body/weight-loss 에서 감량 계산에 필요한 값만
+class CutBasis {
+  const CutBasis({
+    this.weight,
+    this.weightDate,
+    this.bmr,
+    this.bmrEstimated = false,
+    this.targetWeight,
+    this.targetDate,
+    this.ftp,
+  });
+
+  factory CutBasis.fromJson(
+    Map<String, dynamic> goal,
+    Map<String, dynamic> loss,
+  ) {
+    final g = goal['goal'] as Map?;
+    final cur = goal['current'] as Map?;
+    DateTime? date(Object? v) => v is String ? DateTime.tryParse(v) : null;
+    return CutBasis(
+      weight:
+          (cur?['weight'] as num?)?.toDouble() ??
+          (loss['weight'] as num?)?.toDouble(),
+      weightDate: date(cur?['weightDate']) ?? date(loss['recordDate']),
+      bmr: (loss['basalMetabolicRate'] as num?)?.toDouble(),
+      bmrEstimated: loss['bmrEstimated'] == true,
+      targetWeight: (g?['targetWeight'] as num?)?.toDouble(),
+      targetDate: date(g?['targetDate']),
+      ftp: (goal['ftp'] as num?)?.toInt(),
+    );
+  }
+
+  final double? weight; // kg
+  final DateTime? weightDate;
+  final double? bmr; // 기초대사량 kcal
+  final bool bmrEstimated; // 기록지 값이 아니라 서버가 추정한 값
+  final double? targetWeight;
+  final DateTime? targetDate;
+  final int? ftp; // W, 실내 사이클 강도 계산용
+}

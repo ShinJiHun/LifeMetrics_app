@@ -18,6 +18,19 @@ class BodyApi {
     return list..sort((a, b) => a.date.compareTo(b.date));
   }
 
+  // 감량 계산에 쓰는 몸 상태: 최근 체중 · 기초대사량 · 인바디 목표 · FTP.
+  // 목표가 아직 없으면 목표 관련 값은 null
+  Future<CutBasis> fetchCutBasis() async {
+    final (goal, loss) = await (
+      getJson(_client, '/api/body/goals/current'),
+      getJson(_client, '/api/body/weight-loss'),
+    ).wait;
+    return CutBasis.fromJson(
+      goal is Map<String, dynamic> ? goal : const {},
+      loss is Map<String, dynamic> ? loss : const {},
+    );
+  }
+
   // 관리자 로그인. 업로드는 관리자만 할 수 있음
   Future<bool> loginAdmin(String password) => postAdminLogin(_client, password);
 

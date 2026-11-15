@@ -11,6 +11,10 @@ const apiBaseUrl = String.fromEnvironment(
 // 서버에 로그인이 없어 기본 사용자(1)로 조회
 const apiUserId = 1;
 
+// 서버가 주는 상대 경로(/api/exercise/gif/...)를 전체 URL 로. 이미 http 로 시작하면 그대로
+String apiUrl(String path) =>
+    path.startsWith('http') ? path : '$apiBaseUrl$path';
+
 class ApiException implements Exception {
   const ApiException(this.message);
 

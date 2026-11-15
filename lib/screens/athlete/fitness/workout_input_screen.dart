@@ -11,10 +11,12 @@ import 'exercise_picker_sheet.dart';
 
 // 피트니스 입력: 날짜 · PT 여부 → 운동 종목 고르기 → 세트별 무게 × 횟수 → 저장
 class WorkoutInputScreen extends StatefulWidget {
-  const WorkoutInputScreen({super.key, this.api, this.now});
+  const WorkoutInputScreen({super.key, this.api, this.now, this.initial});
 
   final FitnessApi? api;
   final DateTime? now; // 테스트에서 '오늘' 고정용
+  // 미리 채워 둘 운동과 세트 (오늘 운동 추천에서 넘어올 때)
+  final List<(ExerciseItem, List<WorkoutSet>)>? initial;
 
   @override
   State<WorkoutInputScreen> createState() => _WorkoutInputScreenState();
@@ -27,7 +29,11 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
   late final DateTime _today = _dayOf(widget.now ?? DateTime.now());
   late DateTime _date = _today;
   bool _isPT = false;
-  final _drafts = <_DraftExercise>[];
+  late final _drafts = <_DraftExercise>[
+    for (final (item, sets)
+        in widget.initial ?? const <(ExerciseItem, List<WorkoutSet>)>[])
+      _DraftExercise(item, sets: sets),
+  ];
   bool _saving = false;
 
   // 종목 목록은 처음 고를 때 한 번만 받아 둠
@@ -232,10 +238,21 @@ class _DraftSet {
 }
 
 class _DraftExercise {
-  _DraftExercise(this.item);
+  _DraftExercise(this.item, {List<WorkoutSet> sets = const []})
+    : sets = sets.isEmpty
+          ? [_DraftSet()]
+          : [
+              for (final s in sets)
+                _DraftSet(
+                  weight: s.weight == null || s.weight == 0
+                      ? ''
+                      : formatNum(s.weight!),
+                  reps: s.reps?.toString() ?? '',
+                ),
+            ];
 
   final ExerciseItem item;
-  final sets = [_DraftSet()];
+  final List<_DraftSet> sets;
 
   // 새 세트는 직전 세트 값으로 채워 둠
   void addSet() => sets.add(

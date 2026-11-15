@@ -132,10 +132,9 @@ class HealthService {
         ),
     ];
 
-    // 어제 먹은 음식. 삼성헬스는 음식 하나하나를 끼니 종류와 함께 따로 기록함
-    final yesterday = _addDays(today, -1);
-    final meals = [
-      for (final p in of(HealthDataType.NUTRITION, yesterday))
+    // 하루치 음식. 삼성헬스는 음식 하나하나를 끼니 종류와 함께 따로 기록함
+    List<Meal> mealsOf(DateTime day) => [
+      for (final p in of(HealthDataType.NUTRITION, day))
         if (p.value case final NutritionHealthValue v)
           Meal(
             at: p.dateFrom,
@@ -147,6 +146,7 @@ class HealthService {
             carbs: v.carbs,
           ),
     ]..sort((a, b) => a.at.compareTo(b.at));
+    final meals = mealsOf(_addDays(today, -1));
 
     final weight = _latest(points, HealthDataType.WEIGHT);
     final fat = _latest(points, HealthDataType.BODY_FAT_PERCENTAGE);
@@ -157,6 +157,7 @@ class HealthService {
       weighedAt: weight?.dateFrom,
       bodyFat: fat == null ? null : _value(fat),
       yesterdayMeals: meals,
+      todayMeals: mealsOf(today),
       // 다른 권한만 먼저 허용한 경우 식사 권한을 따로 요청할 수 있게
       mealsAuthorized:
           await _health.hasPermissions(

@@ -17,6 +17,8 @@ class ExerciseItem {
     required this.nameKo,
     this.nameEn,
     this.equipmentType,
+    this.description,
+    this.gifUrl,
   });
 
   factory ExerciseItem.fromJson(Map<String, dynamic> json) => ExerciseItem(
@@ -25,6 +27,8 @@ class ExerciseItem {
     nameKo: json['nameKo'] as String,
     nameEn: json['nameEn'] as String?,
     equipmentType: json['equipmentType'] as String?,
+    description: json['description'] as String?,
+    gifUrl: json['gifUrl'] as String?,
   );
 
   final int id;
@@ -32,6 +36,10 @@ class ExerciseItem {
   final String nameKo;
   final String? nameEn;
   final String? equipmentType; // FREE_WEIGHT, MACHINE ...
+  final String? description; // 동작 설명
+  final String? gifUrl; // 서버 경로 (/api/exercise/gif/chest/PUSH_UP.gif), 없으면 null
+
+  bool get hasGif => gifUrl != null && gifUrl!.isNotEmpty;
 
   // 웹 대시보드와 같은 한글 이름
   String? get equipmentLabel => switch (equipmentType) {

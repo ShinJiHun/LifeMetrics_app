@@ -47,58 +47,67 @@ class CategoryCard extends StatelessWidget {
                 ]
               : null,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // 카드가 낮으면(화면에 4개를 맞추느라) 아이콘을 줄이고 설명을 숨김
+        child: LayoutBuilder(
+          builder: (context, box) {
+            final compact = box.maxHeight < 170;
+            final iconBox = compact ? 40.0 : 52.0;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: iconBox,
+                      height: iconBox,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(icon, color: color, size: compact ? 22 : 28),
+                    ),
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: selected ? 1 : 0,
+                      child: Icon(Icons.check_circle, color: color),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
                   ),
-                  child: Icon(icon, color: color, size: 28),
                 ),
-                AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: selected ? 1 : 0,
-                  child: Icon(Icons.check_circle, color: color),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
+                if (!compact) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
               ],
-            ),
-            const Spacer(),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 12,
-                height: 1.4,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

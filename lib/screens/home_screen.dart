@@ -30,10 +30,14 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: switch (persona) {
-        Persona.athlete => const AthleteHomeScreen(),
-        _ => _PlaceholderBody(persona: persona),
-      },
+      // 안드로이드 15+ 는 화면이 시스템 버튼 아래까지 그려지므로 아래 여백을 둬서 카드가 가리지 않게 함
+      body: SafeArea(
+        top: false,
+        child: switch (persona) {
+          Persona.athlete => const AthleteHomeScreen(),
+          _ => _PlaceholderBody(persona: persona),
+        },
+      ),
     );
   }
 }

@@ -99,31 +99,44 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
             ),
           ],
           const SizedBox(height: 20),
+          // 남은 높이에 맞춰 카드 비율을 정해 4개가 스크롤 없이 한 화면에 보이게 함.
+          // 화면이 아주 작아 카드가 너무 납작해지면 그때만 스크롤
           Expanded(
-            child: GridView.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              childAspectRatio: 0.78,
-              children: [
-                for (final section in AthleteSection.values)
-                  CategoryCard(
-                    icon: section.icon,
-                    title: section.title,
-                    subtitle: section.subtitle,
-                    description: section.description,
-                    color: section.color,
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              AthleteSectionScreen(section: section),
-                        ),
-                      );
-                      _loadPlan(); // 추천 화면에서 새로 저장했을 수 있음
-                    },
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, box) {
+                const gap = 14.0;
+                const minCardHeight = 130.0;
+                final cardW = (box.maxWidth - gap) / 2;
+                final fitH = (box.maxHeight - gap) / 2;
+                final fits = fitH >= minCardHeight;
+                final cardH = fits ? fitH : minCardHeight;
+                return GridView.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: gap,
+                  crossAxisSpacing: gap,
+                  childAspectRatio: cardW / cardH,
+                  physics: fits ? const NeverScrollableScrollPhysics() : null,
+                  children: [
+                    for (final section in AthleteSection.values)
+                      CategoryCard(
+                        icon: section.icon,
+                        title: section.title,
+                        subtitle: section.subtitle,
+                        description: section.description,
+                        color: section.color,
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  AthleteSectionScreen(section: section),
+                            ),
+                          );
+                          _loadPlan(); // 추천 화면에서 새로 저장했을 수 있음
+                        },
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ],

@@ -72,7 +72,8 @@ class HealthSyncService {
     } else {
       nextToken = changes.nextToken;
     }
-    final full = changes == null || (prefs.getBool(_fullSyncPendingKey) ?? false);
+    final full =
+        changes == null || (prefs.getBool(_fullSyncPendingKey) ?? false);
 
     final collected = (await _health.collectForSync(
       dayCount: full ? firstSyncDays : syncDays,

@@ -31,8 +31,10 @@ class HealthSyncService {
 
   static const _changesTokenKey = 'health_sync_changes_token';
   static const _lastSyncKey = 'health_sync_last_at';
+  // 새 토큰으로 다시 시작해서 최근 30일 전체를 아직 서버에 못 올렸음
+  static const _fullSyncPendingKey = 'health_sync_full_pending';
 
-  // 처음엔 한 달을 채우고, 그 뒤엔 늦게 들어온 기록까지 덮도록 일주일씩
+  // 처음 · 토큰 만료 땐 한 달을 채우고, 그 뒤엔 늦게 들어온 기록까지 덮도록 일주일씩
   static const firstSyncDays = 30;
   static const syncDays = 7;
 
@@ -54,11 +56,26 @@ class HealthSyncService {
     // 데이터를 읽기 전에 토큰부터 잡아야 읽는 사이에 지워진 기록도 다음 번에 잡힘
     final saved = prefs.getString(_changesTokenKey);
     final changes = saved == null ? null : await _health.changesSince(saved);
-    final nextToken = changes?.nextToken ?? await _health.newChangesToken();
 
-    final first = prefs.getString(_lastSyncKey) == null;
+    // 토큰이 없거나(첫 동기화 · 재설치) 만료됐으면 멈추지 않고 새 토큰을 받아 바로 저장한 뒤
+    // 최근 30일을 전부 보냄. 업로드가 실패해도 다음 번에 30일 전체를 다시 보내도록 표시를 남김
+    final String? nextToken;
+    if (changes == null) {
+      final fresh = await _health.newChangesToken();
+      if (fresh != null) {
+        await prefs.setString(_changesTokenKey, fresh);
+        await prefs.setBool(_fullSyncPendingKey, true);
+      } else {
+        await prefs.remove(_changesTokenKey);
+      }
+      nextToken = null;
+    } else {
+      nextToken = changes.nextToken;
+    }
+    final full = changes == null || (prefs.getBool(_fullSyncPendingKey) ?? false);
+
     final collected = (await _health.collectForSync(
-      dayCount: first ? firstSyncDays : syncDays,
+      dayCount: full ? firstSyncDays : syncDays,
       now: now,
     )).withDeleted(changes?.deletedIds ?? const []);
 
@@ -69,8 +86,8 @@ class HealthSyncService {
     }
 
     // 지난 동기화 이후 새로 생기거나 고쳐진 식단 · 운동만 보냄 (이미 보낸 건 건너뜀).
-    // 처음이거나 토큰이 만료됐거나 고쳐진 기록을 다 모르면 범위 안 전부를 보냄
-    final changedIds = changes?.changedIds;
+    // 전체 동기화 중이거나 고쳐진 기록을 다 모르면 범위 안 전부를 보냄
+    final changedIds = full ? null : changes.changedIds;
     final payload = changedIds == null
         ? collected
         : collected.onlyRecords(changedIds);
@@ -79,6 +96,7 @@ class HealthSyncService {
 
     // 서버 반영이 끝난 뒤에만 토큰을 넘겨야 실패 시 삭제 목록을 다시 보낼 수 있음
     if (nextToken != null) await prefs.setString(_changesTokenKey, nextToken);
+    await prefs.remove(_fullSyncPendingKey);
     await prefs.setString(
       _lastSyncKey,
       (now ?? DateTime.now()).toIso8601String(),

@@ -284,6 +284,103 @@ void main() {
       expect(prefs.getString('health_sync_last_at'), '2026-10-31T21:00:00.000');
     });
 
+    test('변경 토큰이 없으면 새 토큰을 저장하고 30일 전체를 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      final health = _FakeHealth();
+      final sync = HealthSyncService(
+        health: health,
+        client: server(200, {
+          'days': 30,
+          'nutrition': 2,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      );
+
+      await sync.sync();
+
+      expect(health.askedToken, isNull);
+      expect(health.requestedDays, HealthSyncService.firstSyncDays);
+      final body = jsonDecode(sent!.body) as Map;
+      expect([for (final n in body['nutrition']) n['id']], ['n1', 'n2']);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('health_sync_changes_token'), 'fresh');
+      expect(prefs.getBool('health_sync_full_pending'), isNull);
+    });
+
+    test('토큰이 만료되면 새 토큰을 저장하고 30일 전체를 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_changes_token': 'expired',
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      final health = _FakeHealth(); // changesSince → null (만료)
+      final sync = HealthSyncService(
+        health: health,
+        client: server(200, {
+          'days': 30,
+          'nutrition': 2,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      );
+
+      await sync.sync();
+
+      expect(health.askedToken, 'expired');
+      expect(health.requestedDays, HealthSyncService.firstSyncDays);
+      final body = jsonDecode(sent!.body) as Map;
+      expect(body['nutrition'], hasLength(2));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('health_sync_changes_token'), 'fresh');
+    });
+
+    test('만료 후 전체 업로드가 실패하면 다음 번에도 30일 전체를 보냄', () async {
+      SharedPreferences.setMockInitialValues({
+        'health_sync_changes_token': 'expired',
+        'health_sync_last_at': '2026-10-31T21:00:00.000',
+      });
+      await expectLater(
+        HealthSyncService(
+          health: _FakeHealth(),
+          client: server(500, {}),
+          token: 'secret',
+        ).sync(),
+        throwsA(isA<ApiException>()),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('health_sync_changes_token'), 'fresh');
+      expect(prefs.getBool('health_sync_full_pending'), isTrue);
+
+      // 새 토큰으로는 바뀐 게 없다고 나와도 전체를 다시 보냄
+      final health = _FakeHealth(
+        deleted: (
+          deletedIds: const [],
+          changedIds: <String>{},
+          nextToken: 'next',
+        ),
+      );
+      await HealthSyncService(
+        health: health,
+        client: server(200, {
+          'days': 30,
+          'nutrition': 2,
+          'exercises': 0,
+          'deleted': 0,
+        }),
+        token: 'secret',
+      ).sync();
+
+      expect(health.askedToken, 'fresh');
+      expect(health.requestedDays, HealthSyncService.firstSyncDays);
+      expect((jsonDecode(sent!.body) as Map)['nutrition'], hasLength(2));
+      expect(prefs.getString('health_sync_changes_token'), 'next');
+      expect(prefs.getBool('health_sync_full_pending'), isNull);
+    });
+
     test('토큰이 없으면 보내지 않음', () async {
       SharedPreferences.setMockInitialValues({});
       final sync = HealthSyncService(

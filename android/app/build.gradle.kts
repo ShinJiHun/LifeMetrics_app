@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// 맥북과 다른 PC 를 번갈아 빌드해도 같은 키로 서명해야 앱이 재설치(데이터 삭제)되지 않음.
+// android/key.properties + 키스토어를 두 PC 에 똑같이 두면 그 키를, 없으면 PC 의 기본 debug 키를 씀
+val sharedKeyProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasSharedKey = sharedKeyProps.getProperty("storeFile") != null
 
 android {
     namespace = "com.example.lifemetrics_app"
@@ -29,11 +39,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasSharedKey) {
+            create("shared") {
+                storeFile = rootProject.file(sharedKeyProps.getProperty("storeFile"))
+                storePassword = sharedKeyProps.getProperty("storePassword")
+                keyAlias = sharedKeyProps.getProperty("keyAlias")
+                keyPassword = sharedKeyProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
+        val signing = signingConfigs.getByName(if (hasSharedKey) "shared" else "debug")
+        debug {
+            signingConfig = signing
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signing
         }
     }
 }

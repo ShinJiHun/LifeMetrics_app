@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/persona.dart';
 import 'athlete/athlete_home_screen.dart';
+import 'human/diary_screen.dart';
 import 'persona_select_screen.dart';
 
-// 페르소나별 대시보드 (애슬리트 외에는 아직 임시 화면)
+// 페르소나별 대시보드 (애슬리트 · 인간 외에는 아직 임시 화면)
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.persona});
 
@@ -17,7 +18,9 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
-        title: Text('${persona.title} 대시보드'),
+        title: Text(
+          persona == Persona.human ? '인간 · 하루 일기' : '${persona.title} 대시보드',
+        ),
         actions: [
           IconButton(
             tooltip: '페르소나 변경',
@@ -35,6 +38,7 @@ class HomeScreen extends StatelessWidget {
         top: false,
         child: switch (persona) {
           Persona.athlete => const AthleteHomeScreen(),
+          Persona.human => const DiaryScreen(),
           _ => _PlaceholderBody(persona: persona),
         },
       ),

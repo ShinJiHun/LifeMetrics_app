@@ -25,11 +25,13 @@ class DayEvents {
     required this.events,
     this.connected = const {},
     this.failed = const {},
+    this.locked = const {},
   });
 
   final List<DayEvent> events;
   final Set<Persona> connected; // 데이터 연동이 된 페르소나
   final Set<Persona> failed; // 연동은 됐지만 이번에 불러오지 못함
+  final Set<Persona> locked; // 관리자 로그인이 있어야 볼 수 있음 (인간 일기)
 
   // 시각 있는 것 순서대로, 시각 모르는 건 맨 아래
   List<DayEvent> sorted({Persona? only}) {

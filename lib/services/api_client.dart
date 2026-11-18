@@ -127,16 +127,50 @@ Future<Object?> postJson(http.Client client, String path, Object? body) async {
   return _decodeAdminResponse(res);
 }
 
-// 관리자 전용 API 응답 처리. 403 ADMIN_REQUIRED 는 로그인부터 하도록 따로 구분
+// 관리자 쿠키를 싣고 아무 메서드(GET · POST · PUT · DELETE)로 JSON 요청.
+// 일기 초안처럼 서버가 AI 를 부르는 요청은 timeout 을 길게 줌
+Future<Object?> sendAdminJson(
+  http.Client client,
+  String method,
+  String path, {
+  Object? body,
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  final req = http.Request(method, Uri.parse('$apiBaseUrl$path'))
+    ..headers.addAll({'Cookie': ?_adminCookie});
+  if (body != null) {
+    req.headers['Content-Type'] = 'application/json';
+    req.body = jsonEncode(body);
+  }
+  final http.Response res;
+  try {
+    res = await http.Response.fromStream(
+      await client.send(req).timeout(timeout),
+    );
+  } catch (_) {
+    throw const ApiException('서버에 연결할 수 없어요');
+  }
+  return _decodeAdminResponse(res);
+}
+
+// 관리자 전용 API 응답 처리. 403 은 로그인부터 하도록 따로 구분
+// (AdminWriteFilter 는 ADMIN_REQUIRED 코드, 컨트롤러가 직접 막으면 '관리자만 ...' 문구)
 Object? _decodeAdminResponse(http.Response res) {
-  if (res.statusCode == 403 && res.body.contains('ADMIN_REQUIRED')) {
+  final text = utf8.decode(res.bodyBytes);
+  if (res.statusCode == 403 &&
+      (text.contains('ADMIN_REQUIRED') || text.contains('관리자만'))) {
     _adminCookie = null; // 세션이 만료됐을 수 있어 다시 로그인하게
     throw const AdminRequiredException();
   }
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw ApiException('서버 오류가 났어요 (${res.statusCode})');
+    // 서버가 {"message": "..."} 로 이유를 주면 그대로 보여줌
+    String? message;
+    try {
+      final j = jsonDecode(text);
+      if (j is Map && j['message'] is String) message = j['message'] as String;
+    } catch (_) {}
+    throw ApiException(message ?? '서버 오류가 났어요 (${res.statusCode})');
   }
-  final text = utf8.decode(res.bodyBytes);
   if (text.trim().isEmpty) return null;
   // /api/exercise/log 처럼 '저장 완료' 같은 글자만 주는 API 도 있어 JSON 이 아니면 글자 그대로
   try {

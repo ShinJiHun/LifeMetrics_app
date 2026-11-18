@@ -248,6 +248,9 @@ class _DailyInsightScreenState extends State<DailyInsightScreen> {
         _note('${pending.join(' · ')} 데이터는 아직 연동 준비 중이에요'),
       for (final p in data.failed)
         if (only == null || only == p) _note('${p.title} 기록 일부를 불러오지 못했어요'),
+      for (final p in data.locked)
+        if (only == null || only == p)
+          _note('${p.title} 기록은 관리자 로그인 후 보여요 (${p.title} 화면에서 로그인)'),
     ];
     if (events.isEmpty) {
       return [

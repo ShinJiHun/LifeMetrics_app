@@ -13,138 +13,190 @@ import 'package:lifemetrics_app/services/diary_api.dart';
 import 'package:lifemetrics_app/services/fitness_api.dart';
 import 'package:lifemetrics_app/services/ride_api.dart';
 
-http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
-  utf8.encode(jsonEncode(body)),
-  status,
-  headers: {'content-type': 'application/json; charset=utf-8'},
-);
+http.Response _json(Object? body, [int status = 200, Map<String, String>? h]) =>
+    http.Response.bytes(
+      utf8.encode(jsonEncode(body)),
+      status,
+      headers: {'content-type': 'application/json; charset=utf-8', ...?h},
+    );
+
+final _forbidden = _json({'message': '관리자만 접근할 수 있습니다.'}, 403);
+
+Map<String, Object?> _day({
+  List<Map<String, Object?>> notes = const [],
+  Map<String, Object?>? diary,
+}) => {
+  'date': '2026-11-18',
+  'notes': notes,
+  'diary': diary,
+  'book': null,
+  'records': {
+    'rides': [1],
+  },
+};
+
+const _note = {
+  'id': 5,
+  'noteDate': '2026-11-18',
+  'source': 'app',
+  'fileName': null,
+  'content': '\n점심에 산책하며 자유의지에 대해 생각했다\n둘째 줄',
+  'createdAt': '2026-11-18T12:40:00',
+};
+
+const _draft = {
+  'id': 9,
+  'entryDate': '2026-11-18',
+  'kind': 'diary',
+  'title': '산책과 자유의지',
+  'content': '오늘은 점심에 산책을 했다.',
+  'warnings': ['회사 이름이 들어 있어요'],
+  'status': 'draft',
+  'edited': false,
+  'postId': null,
+  'generatedAt': '2026-11-18T22:00:00',
+  'publishedAt': null,
+};
+
+// 관리자 로그인 응답. 쿠키를 받아야 다음 요청에 실림
+http.Response _loginOk() =>
+    _json({'admin': true}, 200, {'set-cookie': 'lm_admin=abc; Path=/'});
 
 void main() {
   final day = DateTime(2026, 11, 18);
 
   group('DiaryApi', () {
-    test('토큰을 싣고 날짜 경로로 읽으며, 없으면 null', () async {
-      final seen = <http.Request>[];
+    test('로그인 전 403 은 AdminRequiredException, 로그인하면 쿠키를 싣고 하루를 읽음', () async {
+      var loggedIn = false;
       final api = DiaryApi(
-        token: 'secret',
         client: MockClient((req) async {
-          seen.add(req);
-          if (req.url.path.endsWith('2026-11-17')) {
-            return _json({'message': '그날 일기가 없습니다.'}, 404);
+          if (req.url.path == '/api/admin/login') {
+            loggedIn = true;
+            return _loginOk();
           }
-          return _json({
-            'date': '2026-11-18',
-            'postId': 1,
-            'title': '11월 18일 (수)',
-            'body': '본문',
-            'visibility': 'private',
-          });
+          if (!loggedIn) return _forbidden;
+          expect(req.headers['Cookie'], 'lm_admin=abc');
+          return _json(_day(notes: [_note], diary: _draft));
         }),
       );
 
-      final d = await api.fetch(day);
-      expect(d!.body, '본문');
-      expect(d.isPublic, isFalse);
-      expect(seen.single.url.path, '/api/diary/2026-11-18');
-      expect(seen.single.headers['Authorization'], 'Bearer secret');
-
-      expect(await api.fetch(DateTime(2026, 11, 17)), isNull);
-    });
-
-    test('저장은 PUT 으로 본문 · 공개 여부를 보냄', () async {
-      late http.Request sent;
-      final api = DiaryApi(
-        token: 'secret',
-        client: MockClient((req) async {
-          sent = req;
-          final b = jsonDecode(req.body) as Map;
-          return _json({'date': '2026-11-18', ...b});
-        }),
-      );
-
-      final d = await api.save(day, body: '오늘 생각', isPublic: true);
-      expect(sent.method, 'PUT');
-      expect(jsonDecode(sent.body), {
-        'title': null,
-        'body': '오늘 생각',
-        'visibility': 'public',
-      });
-      expect(d.isPublic, isTrue);
-    });
-
-    test('토큰이 없으면 요청하지 않고, 401 은 알아볼 수 있는 문구로', () async {
-      var calls = 0;
-      final noToken = DiaryApi(
-        token: '',
-        client: MockClient((_) async {
-          calls++;
-          return _json({});
-        }),
-      );
-      await expectLater(noToken.fetch(day), throwsA(isA<ApiException>()));
-      expect(calls, 0);
-
-      final wrong = DiaryApi(
-        token: 'x',
-        client: MockClient((_) async => _json({'message': 'no'}, 401)),
-      );
       await expectLater(
-        wrong.fetch(day),
+        api.fetchDay(day),
+        throwsA(isA<AdminRequiredException>()),
+      );
+      expect(await api.loginAdmin('pw'), isTrue);
+
+      final d = await api.fetchDay(day);
+      expect(d.notes.single.sourceLabel, 'Claude 앱');
+      expect(d.notes.single.createdAt, DateTime(2026, 11, 18, 12, 40));
+      expect(d.diary!.title, '산책과 자유의지');
+      expect(d.diary!.warnings, ['회사 이름이 들어 있어요']);
+      expect(d.recordKinds, ['라이딩']);
+    });
+
+    test('메모 추가 · 게시 요청 본문, 서버 message 는 그대로 보여줌', () async {
+      final sent = <http.Request>[];
+      final api = DiaryApi(
+        client: MockClient((req) async {
+          sent.add(req);
+          if (req.url.path.endsWith('/notes')) return _json(_note);
+          if (req.url.path.endsWith('/publish')) {
+            return _json({..._draft, 'status': 'published', 'postId': 3});
+          }
+          return _json({'message': '이 날짜에는 메모도 운동 기록도 없습니다.'}, 400);
+        }),
+      );
+
+      await api.addNote(day, '오늘 생각');
+      expect(sent.last.url.path, '/api/diary/2026-11-18/notes');
+      expect(jsonDecode(sent.last.body), {'source': 'app', 'content': '오늘 생각'});
+
+      final e = await api.publish(9, subId: 20);
+      expect(sent.last.url.path, '/api/diary/entries/9/publish');
+      expect(jsonDecode(sent.last.body), {'subId': 20, 'visibility': 'private'});
+      expect(e.isPublished, isTrue);
+
+      await expectLater(
+        api.generate(day),
         throwsA(
           isA<ApiException>().having(
             (e) => e.message,
             'message',
-            contains('토큰'),
+            '이 날짜에는 메모도 운동 기록도 없습니다.',
           ),
         ),
       );
     });
   });
 
-  test('종합 분석 이벤트에 그날 일기가 인간 이벤트로 들어감', () async {
-    final source = DailyEventSource(
+  group('종합 분석 이벤트', () {
+    DailyEventSource source(MockClient diary) => DailyEventSource(
       fitness: FitnessApi(client: MockClient((_) async => _json([]))),
       rides: RideApi(client: MockClient((_) async => _json([]))),
-      diary: DiaryApi(
-        token: 'secret',
-        client: MockClient(
-          (_) async => _json({
-            'date': '2026-11-18',
-            'title': '',
-            'body': '\n  아침에 철학책을 읽었다\n두 번째 줄',
-            'visibility': 'private',
-          }),
-        ),
-      ),
+      diary: DiaryApi(client: diary),
     );
 
-    final data = await source.load(day);
-    final e = data.events.singleWhere((e) => e.persona == Persona.human);
-    expect(e.title, '하루 일기');
-    expect(e.detail, '아침에 철학책을 읽었다');
-    expect(data.connected, contains(Persona.human));
+    test('메모는 저장 시각에, 일기 초안은 하루 이벤트로', () async {
+      final data = await source(
+        MockClient((_) async => _json(_day(notes: [_note], diary: _draft))),
+      ).load(day);
+
+      final human = data.events.where((e) => e.persona == Persona.human);
+      expect(human.length, 2);
+      final note = human.firstWhere((e) => e.time != null);
+      expect(note.title, '메모 · Claude 앱');
+      expect(note.detail, '점심에 산책하며 자유의지에 대해 생각했다');
+      final diary = human.firstWhere((e) => e.time == null);
+      expect(diary.title, '산책과 자유의지');
+      expect(diary.detail, startsWith('초안 · '));
+      expect(data.locked, isEmpty);
+    });
+
+    test('로그인 전이면 실패가 아니라 잠김으로 표시', () async {
+      final data = await source(MockClient((_) async => _forbidden)).load(day);
+      expect(data.locked, {Persona.human});
+      expect(data.failed, isEmpty);
+    });
   });
 
-  testWidgets('일기 화면: 그날 일기를 불러오고, 고쳐서 저장', (tester) async {
-    // 폰처럼 세로로 긴 화면 (기본 800x600 이면 저장 버튼이 화면 밖)
+  testWidgets('일기 화면: 열면 로그인을 묻고, 메모 · 초안을 보여주고, 비공개로 게시', (tester) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    final puts = <Map>[];
+
+    var loggedIn = false;
+    var published = false;
+    final requests = <http.Request>[];
     final api = DiaryApi(
-      token: 'secret',
       client: MockClient((req) async {
-        if (req.method == 'PUT') {
-          final b = jsonDecode(req.body) as Map;
-          puts.add(b);
-          return _json({'date': '2026-11-18', 'title': '11월 18일 (수)', ...b});
+        requests.add(req);
+        final path = req.url.path;
+        if (path == '/api/admin/login') {
+          loggedIn = true;
+          return _loginOk();
         }
-        return _json({
-          'date': '2026-11-18',
-          'title': '11월 18일 (수)',
-          'body': '처음 쓴 일기',
-          'visibility': 'private',
-        });
+        if (!loggedIn) return _forbidden;
+        if (path == '/api/diary/sub-menus') {
+          return _json({
+            'subs': [
+              {'id': 20, 'category': '일기', 'name': '26년'},
+              {'id': 8, 'category': '독서', 'name': '인문학'},
+            ],
+            'diaryDefault': 20,
+          });
+        }
+        if (path.endsWith('/publish')) {
+          published = true;
+          return _json({..._draft, 'status': 'published', 'postId': 3});
+        }
+        return _json(
+          _day(
+            notes: [_note],
+            diary: published
+                ? {..._draft, 'status': 'published', 'postId': 3}
+                : _draft,
+          ),
+        );
       }),
     );
 
@@ -155,19 +207,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('11월 18일 (수) · 오늘'), findsOneWidget);
-    expect(find.text('처음 쓴 일기'), findsOneWidget);
-    expect(find.text('저장됨'), findsOneWidget);
-
-    await tester.enterText(find.text('처음 쓴 일기'), '고친 일기');
-    await tester.pump();
-    expect(find.text('고친 내용이 아직 저장되지 않았어요'), findsOneWidget);
-
-    await tester.tap(find.text('고친 내용 저장'));
+    // 열자마자 비밀번호를 물음
+    expect(find.text('관리자 로그인'), findsWidgets);
+    await tester.enterText(find.byType(TextField), 'pw');
+    await tester.tap(find.text('로그인'));
     await tester.pumpAndSettle();
 
-    expect(puts.single['body'], '고친 일기');
-    expect(puts.single['visibility'], 'private');
-    expect(find.text('저장됨'), findsOneWidget);
+    expect(find.text('메모 1개'), findsOneWidget);
+    expect(find.text('점심에 산책하며 자유의지에 대해 생각했다'), findsOneWidget);
+    expect(find.text('Claude 앱 · 12:40'), findsOneWidget);
+    expect(find.text('산책과 자유의지'), findsOneWidget);
+    expect(find.text('· 회사 이름이 들어 있어요'), findsOneWidget);
+    expect(find.textContaining('라이딩'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('블로그에 게시'));
+    await tester.tap(find.text('블로그에 게시'));
+    await tester.pumpAndSettle();
+    expect(find.text('일기 › 26년'), findsOneWidget); // 기본 메뉴
+    await tester.tap(find.text('비공개로 게시'));
+    await tester.pumpAndSettle();
+
+    final publish = requests.lastWhere((r) => r.url.path.endsWith('/publish'));
+    expect(jsonDecode(publish.body), {'subId': 20, 'visibility': 'private'});
+    expect(find.text('블로그에 게시함'), findsOneWidget);
+    expect(find.text('블로그에 게시'), findsNothing);
   });
 }

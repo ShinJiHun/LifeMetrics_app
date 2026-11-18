@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/day_event.dart';
+import '../models/diary.dart';
 import '../models/persona.dart';
+import 'api_client.dart';
 import 'diary_api.dart';
 import 'fitness_api.dart';
 import 'ride_api.dart';
@@ -21,12 +23,13 @@ class DailyEventSource {
   Future<DayEvents> load(DateTime day) async {
     final events = <DayEvent>[];
     final failed = <Persona>{};
+    final locked = <Persona>{};
 
     // 한 곳이 실패해도 나머지는 보여줌
     final sources = <(Persona, Future<List<DayEvent>>)>[
       (Persona.athlete, _workouts(day)),
       (Persona.athlete, _rideEvents(day)),
-      (Persona.human, _diaryEvents(day)),
+      (Persona.human, _diaryEvents(day, locked)),
     ];
     final results = await Future.wait([
       for (final (_, f) in sources)
@@ -44,6 +47,7 @@ class DailyEventSource {
       events: events,
       connected: const {Persona.athlete, Persona.human},
       failed: failed,
+      locked: locked,
     );
   }
 
@@ -87,23 +91,44 @@ class DailyEventSource {
     ];
   }
 
-  // 그날 일기 한 편 → 시각 없는 이벤트 하나 (본문 첫 줄을 미리보기로)
-  Future<List<DayEvent>> _diaryEvents(DateTime day) async {
-    final d = await _diary.fetch(day);
-    if (d == null) return const [];
-    final firstLine = d.body
-        .split('\n')
-        .map((l) => l.trim())
-        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+  // 일기 메모 · 초안 → 인간 이벤트. 메모는 저장 시각에, 일기는 시각 없는 하루 이벤트로.
+  // 일기 API 는 관리자 전용이라 로그인 전이면 locked 에 표시하고 빈 목록
+  Future<List<DayEvent>> _diaryEvents(DateTime day, Set<Persona> locked) async {
+    final DiaryDay d;
+    try {
+      d = await _diary.fetchDay(day);
+    } on AdminRequiredException {
+      locked.add(Persona.human);
+      return const [];
+    }
+    String preview(String text) {
+      final line = text
+          .split('\n')
+          .map((l) => l.trim())
+          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+      return line.length > 60 ? '${line.substring(0, 60)}…' : line;
+    }
+
     return [
-      DayEvent(
-        persona: Persona.human,
-        icon: Icons.menu_book,
-        title: d.title?.isNotEmpty == true ? d.title! : '하루 일기',
-        detail: firstLine.length > 60
-            ? '${firstLine.substring(0, 60)}…'
-            : firstLine,
-      ),
+      for (final n in d.notes)
+        DayEvent(
+          persona: Persona.human,
+          icon: Icons.sticky_note_2_outlined,
+          time: n.createdAt,
+          title: '메모 · ${n.sourceLabel}',
+          detail: preview(n.content),
+        ),
+      for (final e in [d.diary, d.book])
+        if (e != null)
+          DayEvent(
+            persona: Persona.human,
+            icon: e.isBook ? Icons.menu_book : Icons.auto_stories,
+            title: e.title.isNotEmpty ? e.title : (e.isBook ? '독서 기록' : '하루 일기'),
+            detail: [
+              e.isPublished ? '게시함' : '초안',
+              preview(e.content),
+            ].where((s) => s.isNotEmpty).join(' · '),
+          ),
     ];
   }
 

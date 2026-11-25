@@ -79,7 +79,7 @@ void main() {
 
     await tester.tap(find.text('라이딩 기록'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('랜도너스 계획'));
+    await tester.tap(find.text('투어링 계획'));
     await tester.pumpAndSettle();
     expect(find.text('준비 중이에요'), findsOneWidget);
   });

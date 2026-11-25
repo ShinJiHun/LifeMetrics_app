@@ -11,6 +11,17 @@ const apiBaseUrl = String.fromEnvironment(
 // 서버에 로그인이 없어 기본 사용자(1)로 조회
 const apiUserId = 1;
 
+// 앱 전용 토큰(서버 .env 의 HEALTH_SYNC_TOKEN). env.json → --dart-define-from-file 로 넣음.
+// 지금 서버는 GET 을 누구에게나 열어 두지만, 읽기도 막도록 바뀌면 앱은 이 토큰으로 읽음.
+// 비어 있으면 헤더를 보내지 않음
+const appToken = String.fromEnvironment('HEALTH_SYNC_TOKEN');
+
+// 읽기 요청 공통 헤더: 앱 토큰 + (로그인했다면) 관리자 쿠키
+Map<String, String> _readHeaders() => {
+  if (appToken.isNotEmpty) 'Authorization': 'Bearer $appToken',
+  'Cookie': ?_adminCookie,
+};
+
 // 서버가 주는 상대 경로(/api/exercise/gif/...)를 전체 URL 로. 이미 http 로 시작하면 그대로
 String apiUrl(String path) =>
     path.startsWith('http') ? path : '$apiBaseUrl$path';
@@ -80,9 +91,18 @@ Future<Object?> getJson(
 
   final http.Response res;
   try {
-    res = await client.get(uri).timeout(const Duration(seconds: 10));
+    res = await client
+        .get(uri, headers: _readHeaders())
+        .timeout(const Duration(seconds: 10));
   } catch (_) {
     throw const ApiException('서버에 연결할 수 없어요');
+  }
+  if (res.statusCode == 401 || res.statusCode == 403) {
+    throw ApiException(
+      appToken.isEmpty
+          ? '서버가 읽기 권한을 요구해요. env.json 에 HEALTH_SYNC_TOKEN 을 넣고 실행해 주세요'
+          : '서버가 앱 토큰을 받지 않았어요 (${res.statusCode})',
+    );
   }
   if (res.statusCode != 200) {
     throw ApiException('서버 오류가 났어요 (${res.statusCode})');

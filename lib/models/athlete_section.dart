@@ -6,6 +6,8 @@ import '../screens/athlete/body/samsung_health_screen.dart';
 import '../screens/athlete/fitness/workout_history_screen.dart';
 import '../screens/athlete/fitness/workout_input_entry.dart';
 import '../screens/athlete/fitness/workout_recommend_screen.dart';
+import '../screens/athlete/gear/bike_screen.dart';
+import '../screens/athlete/riding/randonneuring_screen.dart';
 import '../screens/athlete/riding/ride_feed_screen.dart';
 
 class SectionMenu {
@@ -96,8 +98,9 @@ enum AthleteSection {
       ),
       SectionMenu(
         title: '랜도너스 계획',
-        description: '브레베 코스와 컨트롤 포인트 계획',
+        description: '내 기록 · 브레베 일정 · 퍼머넌트 코스',
         icon: Icons.flag,
+        builder: RandonneuringScreen.new,
       ),
       SectionMenu(
         title: '투어링 계획',
@@ -122,6 +125,7 @@ enum AthleteSection {
         title: '내 자전거',
         description: '보유 자전거와 부품 정보',
         icon: Icons.pedal_bike,
+        builder: BikeListScreen.new,
       ),
     ],
   );

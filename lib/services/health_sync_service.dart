@@ -13,7 +13,8 @@ class HealthSyncRejected extends ApiException {
 }
 
 // 서버의 HEALTH_SYNC_TOKEN 과 같은 값. env.json 에 넣고 --dart-define-from-file=env.json 으로 빌드
-const healthSyncToken = String.fromEnvironment('HEALTH_SYNC_TOKEN');
+// (읽기 요청에도 쓰는 앱 토큰이라 api_client 의 appToken 과 같음)
+const healthSyncToken = appToken;
 
 // 헬스 커넥트에서 읽은 활동량 · 식단 · 운동을 서버(POST /api/health-sync)로 올림.
 // 같은 레코드를 다시 보내도 서버가 레코드 id 로 덮어쓰므로 최근 며칠을 통째로 다시 보냄

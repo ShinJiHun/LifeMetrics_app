@@ -16,7 +16,7 @@ void main() {
     usePhoneSize(tester);
 
     await tester.pumpWidget(const MyApp());
-    expect(find.text('Lifemetrics'), findsOneWidget);
+    expect(find.text('LifeMetrics'), findsOneWidget);
 
     await tester.pumpAndSettle();
 

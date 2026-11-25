@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -20,6 +21,11 @@ class AdminBiometric {
 
   static bool _hooked = false;
 
+  // 지문은 실제 폰(안드로이드 · iOS)에서만. flutter test 는 PC(맥 · 윈도우)에서 돌아
+  // 플랫폼 채널을 부르지 않게 여기서 막음 (부르면 응답이 늦어 로그인 다이얼로그 테스트가 깨짐)
+  static bool get _supported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   // 서버가 저장해 둔 쿠키를 거절하면 저장소에서도 지움 (안 그러면 지문 → 거절이 반복됨)
   static void _hook() {
     if (_hooked) return;
@@ -29,6 +35,7 @@ class AdminBiometric {
 
   // 이 폰에 지문이 등록돼 있어 쓸 수 있는지
   static Future<bool> available() async {
+    if (!_supported) return false;
     try {
       return await _auth.isDeviceSupported() && await _auth.canCheckBiometrics;
     } catch (e) {
@@ -39,6 +46,7 @@ class AdminBiometric {
 
   // 지문으로 저장해 둔 관리자 쿠키를 꺼내 씀. 저장된 게 없거나 인증 실패 · 취소면 false
   static Future<bool> unlock() async {
+    if (!_supported) return false;
     _hook();
     try {
       final saved = await _storage.read(key: _key);
@@ -75,6 +83,7 @@ class AdminBiometric {
   }
 
   static Future<void> forget() async {
+    if (!_supported) return;
     try {
       await _storage.delete(key: _key);
     } catch (_) {}

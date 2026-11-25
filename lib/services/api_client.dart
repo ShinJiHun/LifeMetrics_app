@@ -1,12 +1,25 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show appFlavor;
 import 'package:http/http.dart' as http;
 
-// lifemetrics 백엔드 주소. --dart-define=API_BASE_URL=... 로 바꿀 수 있음
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
+// 개발 서버 주소 (IP, HTTP)
+const devBaseUrl = String.fromEnvironment(
+  'DEV_API_BASE_URL',
   defaultValue: 'http://34.172.162.148:8081',
 );
+
+const prodBaseUrl = 'https://ride.tho881.me';
+
+// 개발 앱(--flavor dev, 'LifeMetrics DEV')인지. 테스트 · flavor 없이 돌리면 운영
+bool get isDevApp => appFlavor == 'dev';
+
+// lifemetrics 백엔드 주소: 개발 앱은 개발 서버, 운영 앱은 운영 서버.
+// --dart-define=API_BASE_URL=... 를 주면 그걸 우선 (자동 동기화 같은 백그라운드 작업도 같은 주소)
+const _apiBaseOverride = String.fromEnvironment('API_BASE_URL');
+final String apiBaseUrl = _apiBaseOverride.isNotEmpty
+    ? _apiBaseOverride
+    : (isDevApp ? devBaseUrl : prodBaseUrl);
 
 // 서버에 로그인이 없어 기본 사용자(1)로 조회
 const apiUserId = 1;

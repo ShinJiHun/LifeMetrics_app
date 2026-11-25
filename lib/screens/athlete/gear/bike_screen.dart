@@ -6,6 +6,7 @@ import '../../../services/api_client.dart';
 import '../../../services/bike_api.dart';
 import '../../../utils/format.dart';
 import '../../../widgets/status_message.dart';
+import 'bike_fit_form_screen.dart';
 
 // 장비 기록 > 내 자전거: 쓰는 자전거 → 은퇴한 자전거 순. 누르면 사양 · 누적 · 기어 사용 · 피팅
 class BikeListScreen extends StatefulWidget {
@@ -214,12 +215,30 @@ class _BikeDetailScreenState extends State<BikeDetailScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _gearError = e.message);
     }
+    await _loadFits();
+  }
+
+  Future<void> _loadFits() async {
     try {
-      final fits = await widget.api.fetchFits(id);
+      final fits = await widget.api.fetchFits(widget.bike.id);
       if (mounted) setState(() => _fits = fits);
     } on ApiException {
       if (mounted) setState(() => _fits = const []);
     }
+  }
+
+  Future<void> _addFit() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => BikeFitFormScreen(
+          bike: widget.bike,
+          api: widget.api,
+          color: widget.color,
+          previous: _fits?.firstOrNull,
+        ),
+      ),
+    );
+    if (saved == true) await _loadFits();
   }
 
   @override
@@ -297,7 +316,7 @@ class _BikeDetailScreenState extends State<BikeDetailScreen> {
             ),
             final List<BikeFit> fits when fits.isEmpty => _Panel(
               child: Text(
-                '피팅 기록이 없어요. 웹 장비 화면에서 입력하면 여기 보여요',
+                '피팅 기록이 없어요. 아래 피팅 추가로 적어 두세요',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
               ),
             ),
@@ -308,6 +327,16 @@ class _BikeDetailScreenState extends State<BikeDetailScreen> {
               ],
             ),
           },
+          OutlinedButton.icon(
+            onPressed: _fits == null ? null : _addFit,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: color,
+              side: BorderSide(color: color.withValues(alpha: 0.6)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            icon: const Icon(Icons.add),
+            label: const Text('피팅 추가'),
+          ),
         ],
       ),
     );

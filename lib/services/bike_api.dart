@@ -20,6 +20,12 @@ class BikeApi {
     return [for (final e in list) GearUsage.fromJson(e as Map<String, dynamic>)];
   }
 
+  Future<bool> loginAdmin(String password) => postAdminLogin(_client, password);
+
+  // 피팅 저장 (관리자). 로그인 전이면 AdminRequiredException
+  Future<void> createFit(int bikeId, Map<String, Object?> fit) =>
+      postJson(_client, '/api/bikes/$bikeId/fits', fit);
+
   Future<List<BikeFit>> fetchFits(int bikeId) async {
     final list = await getJson(_client, '/api/bikes/$bikeId/fits') as List;
     return [for (final e in list) BikeFit.fromJson(e as Map<String, dynamic>)];

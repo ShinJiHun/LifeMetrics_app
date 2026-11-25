@@ -5,6 +5,7 @@ import '../../../models/workout.dart';
 import '../../../services/api_client.dart';
 import '../../../services/fitness_api.dart';
 import '../../../utils/format.dart';
+import 'dev_import_screen.dart';
 
 // 피트니스 기록: 달별로 운동한 날을 카드로, 누르면 운동별 세트까지 펼침
 class WorkoutHistoryScreen extends StatefulWidget {
@@ -69,6 +70,22 @@ class _WorkoutHistoryScreenState extends State<WorkoutHistoryScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: const Text('피트니스 기록'),
+        actions: [
+          // 앱이 운영을 볼 때만: 개발 서버에만 저장된 예전 기록을 운영으로 옮기기
+          if (apiBaseUrl != devBaseUrl)
+            IconButton(
+              tooltip: '개발 서버 기록 옮기기',
+              icon: const Icon(Icons.cloud_sync_outlined),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DevImportScreen(),
+                  ),
+                );
+                _load();
+              },
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -301,7 +318,7 @@ class WorkoutSessionCard extends StatelessWidget {
                     : Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '${e.nameKo ?? '운동'}  ·  ${e.sets.length}세트',
+                          '${e.nameKo ?? '운동'}  ·  ${e.brief}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.8),
                             fontSize: 13,
@@ -488,6 +505,18 @@ class _ExerciseSets extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
+          if (exercise.isCardio) ...[
+            Text(
+              exercise.cardioSummary.isEmpty ? '기록 없음' : exercise.cardioSummary,
+              style: const TextStyle(fontSize: 13),
+            ),
+            // 경사 · 속도 같은 기구 설정은 메모로 저장됨
+            if (exercise.memo case final memo?)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(memo, style: TextStyle(color: muted, fontSize: 12)),
+              ),
+          ] else
           Wrap(
             spacing: 12,
             runSpacing: 4,

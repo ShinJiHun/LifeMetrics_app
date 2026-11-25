@@ -19,7 +19,7 @@
     <!-- 하루 1회 자동 동기화: 앱이 꺼져 있어도 읽기 -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"/>
     <application
-        android:label="lifemetrics_app"
+        android:label="${appName}"
         android:name="${applicationName}"
         android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher">

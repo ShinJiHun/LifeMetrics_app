@@ -23,8 +23,14 @@ class _RideFeedScreenState extends State<RideFeedScreen> {
 
   late final RideApi _api = widget.api ?? RideApi();
 
+  // 한 번에 받는 개수. 스크롤이 끝에 닿으면 다음 페이지
+  static const _pageSize = 10;
+
   List<Ride>? _rides; // 최신순, 로딩 중엔 null
   String? _error;
+  int _page = 0; // 마지막으로 받은 페이지
+  bool _hasMore = true;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -32,17 +38,40 @@ class _RideFeedScreenState extends State<RideFeedScreen> {
     _load();
   }
 
+  // 처음부터 다시 (당겨서 새로고침 포함)
   Future<void> _load() async {
     try {
-      final rides = await _api.fetchRides();
+      final rides = await _api.fetchRides(page: 0, size: _pageSize);
       if (mounted) {
         setState(() {
           _rides = rides;
+          _page = 0;
+          _hasMore = rides.length >= _pageSize;
           _error = null;
         });
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  // 다음 페이지를 이어 붙임. 실패하면 더 받지 않고 끝에 안내만
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _rides == null) return;
+    _loadingMore = true;
+    try {
+      final next = await _api.fetchRides(page: _page + 1, size: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        final seen = {for (final r in _rides!) r.id};
+        _rides = [..._rides!, ...next.where((r) => seen.add(r.id))];
+        _page++;
+        _hasMore = next.length >= _pageSize;
+      });
+    } on ApiException {
+      if (mounted) setState(() => _hasMore = false);
+    } finally {
+      _loadingMore = false;
     }
   }
 
@@ -87,13 +116,25 @@ class _RideFeedScreenState extends State<RideFeedScreen> {
               : ListView.separated(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                  itemCount: rides.length,
+                  itemCount: rides.length + (_hasMore ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
-                  itemBuilder: (_, i) => RideCard(
-                    key: ValueKey(rides[i].id),
-                    ride: rides[i],
-                    api: _api,
-                  ),
+                  itemBuilder: (_, i) {
+                    // 끝에 닿으면 다음 페이지
+                    if (i == rides.length) {
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _loadMore(),
+                      );
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return RideCard(
+                      key: ValueKey(rides[i].id),
+                      ride: rides[i],
+                      api: _api,
+                    );
+                  },
                 ),
         ),
       },

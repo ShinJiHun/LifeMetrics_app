@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
+import 'services/api_client.dart' show isDevApp;
 import 'services/health_auto_sync.dart';
 
 void main() {
@@ -19,7 +20,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Lifemetrics',
+      title: 'LifeMetrics',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -29,15 +30,26 @@ class MyApp extends StatelessWidget {
       // 모든 화면(다이얼로그 · 바텀시트 포함)을 안드로이드 하단 버튼(뒤로 · 홈 · 최근 앱)
       // 또는 제스처 바 위에만 그림. 안드로이드 15+ 는 기본이 화면 끝까지(edge-to-edge)라
       // 하단 바 뒤로 내용이 들어가던 것을 여기서 한 번에 막음. 위쪽은 각 화면 AppBar 가 처리
-      builder: (context, child) => ColoredBox(
-        color: _background,
-        child: SafeArea(
-          top: false,
-          left: false,
-          right: false,
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
+      // 개발 앱이면 오른쪽 위에 주황 DEV 띠 (지금 어느 서버를 보는지 헷갈리지 않게)
+      builder: (context, child) {
+        final app = ColoredBox(
+          color: _background,
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+        return isDevApp
+            ? Banner(
+                message: 'DEV',
+                location: BannerLocation.topEnd,
+                color: const Color(0xFFF59E0B),
+                child: app,
+              )
+            : app;
+      },
       home: const SplashScreen(),
     );
   }

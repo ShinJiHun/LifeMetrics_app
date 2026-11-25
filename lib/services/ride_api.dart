@@ -10,9 +10,18 @@ class RideApi {
 
   final http.Client _client;
 
-  // 라이딩 목록, 최신순
-  Future<List<Ride>> fetchRides() async {
-    final list = await getJson(_client, '/api/activity/list') as List;
+  // 라이딩 목록, 최신순. size 를 안 주면 서버 기본(최근 5개).
+  // 피드는 page · size 로 이어서 받음 (page 0 이 최신)
+  Future<List<Ride>> fetchRides({int page = 0, int? size}) async {
+    final list =
+        await getJson(
+              _client,
+              '/api/activity/list',
+              query: {
+                if (size != null) ...{'page': '$page', 'size': '$size'},
+              },
+            )
+            as List;
     final rides = list
         .map((e) => Ride.fromJson(e as Map<String, dynamic>))
         .toList();

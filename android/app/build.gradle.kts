@@ -25,8 +25,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.lifemetrics_app"
+        // 운영 앱 패키지. 개발 앱은 아래 dev flavor 가 .dev 를 붙여 폰에 둘 다 설치됨
+        applicationId = "me.tho881.lifemetrics"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26 // 헬스 커넥트
@@ -37,6 +37,24 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // 운영 / 개발 앱: 같은 코드, 다른 패키지 · 이름 · 아이콘 · 서버.
+    //   flutter run --flavor prod   → LifeMetrics      (ride.tho881.me, 운영 DB)
+    //   flutter run --flavor dev    → LifeMetrics DEV  (34.172.162.148:8081, 개발 DB)
+    // 서버 주소는 api_client.dart 가 flavor(appFlavor)로 고름. 개발 앱 아이콘은 src/dev/res
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+            manifestPlaceholders["appName"] = "LifeMetrics"
+        }
+        create("dev") {
+            dimension = "env"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders["appName"] = "LifeMetrics DEV"
+        }
     }
 
     signingConfigs {

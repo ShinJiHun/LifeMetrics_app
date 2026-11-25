@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 백엔드(api_client.dart 의 apiBaseUrl)가 아직 HTTP 라서 그 서버만 평문 통신 허용.
-     나머지 주소는 기본값(HTTPS 만)을 그대로 따름 -->
+<!-- 개발 서버(34.172.162.148:8081)가 HTTP 라서 그 IP 만 평문 통신 허용. 나머지는 HTTPS 만.
+     개발 앱이 쓰고, 운영 앱도 '개발 서버 기록 옮기기'에서 읽느라 필요함.
+     기록 옮기기를 다 쓰고 나면 이 파일을 src/dev/res/xml 로 옮겨 운영 앱은 HTTPS 만 쓰게 하면 됨 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">34.172.162.148</domain>

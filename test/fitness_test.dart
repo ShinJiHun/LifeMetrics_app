@@ -232,6 +232,76 @@ void main() {
     expect(find.text('운동을 추가해 주세요'), findsOneWidget);
   });
 
+  testWidgets('입력: 유산소 종목은 무게 × 횟수 대신 시간 · 기구 설정으로 저장', (tester) async {
+    Map<String, dynamic>? saved;
+    final client = MockClient((req) async {
+      switch (req.url.path) {
+        case '/api/exercise/categories':
+          return utf8Response(
+            jsonEncode([
+              {'id': 1, 'name': '가슴'},
+              {'id': 7, 'name': '유산소'},
+            ]),
+            200,
+          );
+        case '/api/exercise/items':
+          return utf8Response(
+            jsonEncode([
+              {'id': 872, 'categoryId': 7, 'nameKo': '러닝머신'},
+            ]),
+            200,
+          );
+        case '/api/exercise/log':
+          saved = jsonDecode(req.body) as Map<String, dynamic>;
+          return utf8Response('', 200);
+      }
+      return utf8Response('not found', 404);
+    });
+    await pump(
+      tester,
+      WorkoutInputScreen(
+        api: FitnessApi(client: client),
+        now: now,
+      ),
+    );
+
+    await tester.tap(find.text('운동 추가'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('러닝머신'));
+    await tester.pumpAndSettle();
+
+    // 세트 칸 대신 유산소 칸: 시간 · 칼로리 · 경사 · 속도 · 거리 · 심박
+    expect(find.text('세트 추가'), findsNothing);
+    expect(find.text('경사'), findsOneWidget);
+    expect(find.text('속도'), findsOneWidget);
+
+    // 시간이 비면 저장하지 않음
+    await tester.tap(find.text('저장'));
+    await tester.pump();
+    expect(find.text('유산소는 시간(분)을 입력해 주세요'), findsOneWidget);
+    expect(saved, isNull);
+
+    Finder field(String label) => find.widgetWithText(TextField, label);
+    await tester.enterText(field('시간'), '30');
+    await tester.enterText(field('기기 칼로리'), '250');
+    await tester.enterText(field('경사'), '12');
+    await tester.enterText(field('속도'), '5.5');
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+
+    expect(saved!['exercises'], [
+      {
+        'exerciseItemId': 872,
+        'durationMin': 30.0,
+        'distanceKm': null,
+        'kcal': 250,
+        'avgHr': null,
+        'memo': '경사 12% · 속도 5.5km/h',
+        'sets': <Object>[],
+      },
+    ]);
+  });
+
   testWidgets('입력: 횟수가 비면 저장하지 않음', (tester) async {
     var posted = false;
     final client = MockClient((req) async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../screens/athlete/body/health_checkup_screen.dart';
 import '../screens/athlete/body/inbody_screen.dart';
 import '../screens/athlete/body/samsung_health_screen.dart';
 import '../screens/athlete/fitness/workout_history_screen.dart';
@@ -37,6 +38,7 @@ enum AthleteSection {
         title: '건강검진',
         description: '검진 결과와 주요 수치를 모아봐요',
         icon: Icons.medical_information,
+        builder: HealthCheckupScreen.new,
       ),
       SectionMenu(
         title: '인바디',

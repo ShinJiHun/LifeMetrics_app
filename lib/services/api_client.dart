@@ -30,7 +30,18 @@ class AdminRequiredException extends ApiException {
 }
 
 // 관리자 로그인으로 받은 세션 쿠키. 앱이 켜져 있는 동안만 기억
+// (지문 로그인을 켜면 AdminBiometric 이 폰 보안 저장소에 따로 보관했다가 다시 넣어 줌)
 String? _adminCookie;
+
+// 지금 들고 있는 관리자 쿠키 (지문 로그인용으로 저장할 때)
+String? get adminCookie => _adminCookie;
+
+// 저장해 둔 관리자 쿠키를 다시 씀 (지문 인증 성공 후)
+void restoreAdminCookie(String cookie) => _adminCookie = cookie;
+
+// 들고 있던 관리자 쿠키를 서버가 거절했을 때(만료 · 비밀번호 변경) 알림.
+// AdminBiometric 이 저장해 둔 쿠키를 지우는 데 씀
+void Function()? onAdminCookieRejected;
 
 // 관리자 비밀번호로 로그인. 틀리면 false
 Future<bool> postAdminLogin(http.Client client, String password) async {
@@ -154,11 +165,15 @@ Future<Object?> sendAdminJson(
 }
 
 // 관리자 전용 API 응답 처리. 403 은 로그인부터 하도록 따로 구분
-// (AdminWriteFilter 는 ADMIN_REQUIRED 코드, 컨트롤러가 직접 막으면 '관리자만 ...' 문구)
+// (AdminWriteFilter 는 ADMIN_REQUIRED 코드, 컨트롤러가 직접 막으면 '관리자만 ...' 문구,
+//  @ResponseStatus(FORBIDDEN) 예외는 스프링 기본 오류 JSON {"status":403,"error":"Forbidden"} — 건강검진)
 Object? _decodeAdminResponse(http.Response res) {
   final text = utf8.decode(res.bodyBytes);
   if (res.statusCode == 403 &&
-      (text.contains('ADMIN_REQUIRED') || text.contains('관리자만'))) {
+      (text.contains('ADMIN_REQUIRED') ||
+          text.contains('관리자만') ||
+          text.contains('"error":"Forbidden"'))) {
+    if (_adminCookie != null) onAdminCookieRejected?.call();
     _adminCookie = null; // 세션이 만료됐을 수 있어 다시 로그인하게
     throw const AdminRequiredException();
   }

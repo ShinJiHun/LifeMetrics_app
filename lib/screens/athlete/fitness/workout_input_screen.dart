@@ -5,6 +5,7 @@ import '../../../models/athlete_section.dart';
 import '../../../models/today_plan.dart';
 import '../../../models/workout.dart';
 import '../../../services/api_client.dart';
+import '../../../services/cut_planner.dart';
 import '../../../services/fitness_api.dart';
 import '../../../utils/format.dart';
 import '../../../widgets/bottom_action_bar.dart';
@@ -14,6 +15,7 @@ import 'exercise_picker_sheet.dart';
 import 'workout_recommend_screen.dart' show ExerciseGif;
 
 // 피트니스 입력: 날짜 · PT 여부 → 운동 종목 고르기 → 세트별 무게 × 횟수 → 저장.
+// 유산소 종목(카테고리 '유산소')은 세트 대신 시간 · 칼로리 · 거리 · 심박 + 기구 설정(경사 · 속도 ...)을 받음.
 // [plan] 이 있으면 '오늘 추천 운동 입력': 저장한 추천으로 채우고 고른 유산소 입력칸을 함께 보여줌
 class WorkoutInputScreen extends StatefulWidget {
   const WorkoutInputScreen({
@@ -115,13 +117,36 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
     }();
     final item = await showExercisePicker(context, catalog: catalog);
     if (item == null || !mounted) return;
-    setState(() => _drafts.add(_DraftExercise(item)));
+    final (categories, _) = await catalog;
+    if (!mounted) return;
+    setState(
+      () => _drafts.add(
+        _DraftExercise(item, isCardio: _isCardioItem(item, categories)),
+      ),
+    );
+  }
+
+  // 서버 카테고리 이름이 '유산소'(백엔드 ExerciseLogService.CARDIO_CATEGORY)이거나
+  // 이름으로 아는 유산소 기구(러닝머신 · 사이클 ...)면 유산소로 입력
+  static bool _isCardioItem(ExerciseItem item, List<ExerciseCategory> cats) =>
+      cats.any((c) => c.id == item.categoryId && c.name == '유산소') ||
+      CardioMachine.forItemName(item.nameKo) != null;
+
+  // 유산소 종목 기록. 시간을 안 적은 게 하나라도 있으면 null
+  List<CardioLog>? _validCardio() {
+    final logs = <CardioLog>[];
+    for (final d in _drafts.where((d) => d.isCardio)) {
+      final log = d.toCardioLog();
+      if (log == null) return null;
+      logs.add(log);
+    }
+    return logs;
   }
 
   // 모든 세트에 횟수가 있어야 저장. 무게를 비우면 맨몸으로 보고 0kg
   List<WorkoutExercise>? _validExercises() {
     final exercises = <WorkoutExercise>[];
-    for (final d in _drafts) {
+    for (final d in _drafts.where((d) => !d.isCardio)) {
       final sets = <WorkoutSet>[];
       for (final (i, s) in d.sets.indexed) {
         final reps = int.tryParse(s.reps.text);
@@ -149,13 +174,20 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
       );
       return;
     }
+    final draftCardio = _validCardio();
+    if (draftCardio == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('유산소는 시간(분)을 입력해 주세요')),
+      );
+      return;
+    }
 
     // 유산소: 시간을 적어야 기록. 비어 있으면 빼고 저장할지 물음
     final cardio = _plan?.cardio;
     final cardioLog = cardio?.toLog();
     if (cardio != null && cardioLog == null) {
       final noItem = cardio.itemId == null;
-      if (exercises.isEmpty) {
+      if (exercises.isEmpty && draftCardio.isEmpty) {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -169,7 +201,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text(noItem ? '유산소는 저장할 수 없어요' : '유산소 시간이 비어 있어요'),
-          content: const Text('유산소는 빼고 웨이트만 저장할까요?'),
+          content: const Text('추천 유산소는 빼고 나머지만 저장할까요?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -177,7 +209,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('웨이트만 저장'),
+              child: const Text('빼고 저장'),
             ),
           ],
         ),
@@ -189,7 +221,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
       date: _date,
       isPT: _isPT,
       exercises: exercises,
-      cardio: [?cardioLog],
+      cardio: [?cardioLog, ...draftCardio],
     );
 
     setState(() => _saving = true);
@@ -348,8 +380,12 @@ class _DraftSet {
 }
 
 class _DraftExercise {
-  _DraftExercise(this.item, {List<WorkoutSet> sets = const []})
-    : sets = sets.isEmpty
+  _DraftExercise(
+    this.item, {
+    List<WorkoutSet> sets = const [],
+    this.isCardio = false,
+  }) : machine = isCardio ? CardioMachine.forItemName(item.nameKo) : null,
+       sets = sets.isEmpty
           ? [_DraftSet()]
           : [
               for (final s in sets)
@@ -363,6 +399,44 @@ class _DraftExercise {
 
   final ExerciseItem item;
   final List<_DraftSet> sets;
+  final bool isCardio;
+  final CardioMachine? machine; // 기구를 알면 경사 · 속도 같은 설정칸을 더 보여줌
+
+  // 유산소 입력칸: (키, 이름, 단위, 소수점, 콜론)
+  late final List<(String, String, String, bool, bool)> cardioSpecs = [
+    ('minutes', '시간', '분', true, false),
+    ('kcal', '기기 칼로리', 'kcal', false, false),
+    for (final (key, label, unit)
+        in machine?.extras ?? const <(String, String, String)>[])
+      (key, label, unit, key != 'pace', key == 'pace'),
+    ('distance', '거리', 'km', true, false),
+    ('avgHr', '평균 심박', 'bpm', false, false),
+  ];
+  late final Map<String, TextEditingController> cardio = {
+    for (final (key, _, _, _, _) in cardioSpecs) key: TextEditingController(),
+  };
+
+  String _v(String key) => cardio[key]?.text.trim() ?? '';
+
+  // 시간을 적었으면 기록으로. 기구 설정은 서버에 칸이 없어 메모로 ('경사 12% · 속도 5.5km/h')
+  CardioLog? toCardioLog() {
+    final minutes = double.tryParse(_v('minutes'));
+    if (minutes == null || minutes <= 0) return null;
+    final settings = [
+      for (final (key, label, unit)
+          in machine?.extras ?? const <(String, String, String)>[])
+        if (_v(key).isNotEmpty) '$label ${_v(key)}$unit',
+    ];
+    return CardioLog(
+      exerciseItemId: item.id,
+      name: item.nameKo,
+      minutes: minutes,
+      distanceKm: double.tryParse(_v('distance')),
+      kcal: int.tryParse(_v('kcal')),
+      avgHr: int.tryParse(_v('avgHr')),
+      memo: settings.isEmpty ? null : settings.join(' · '),
+    );
+  }
 
   // 새 세트는 직전 세트 값으로 채워 둠
   void addSet() => sets.add(
@@ -375,6 +449,11 @@ class _DraftExercise {
   void dispose() {
     for (final s in sets) {
       s.dispose();
+    }
+    if (isCardio) {
+      for (final c in cardio.values) {
+        c.dispose();
+      }
     }
   }
 }
@@ -445,6 +524,9 @@ class _DraftCard extends StatelessWidget {
               ),
             ],
           ),
+          if (draft.isCardio)
+            _CardioFields(draft: draft)
+          else ...[
           for (final (i, s) in draft.sets.indexed)
             Padding(
               padding: const EdgeInsets.only(top: 8, right: 8),
@@ -498,6 +580,58 @@ class _DraftCard extends StatelessWidget {
             icon: const Icon(Icons.add, size: 18),
             label: const Text('세트 추가'),
           ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// 유산소 입력칸: 두 칸씩 한 줄
+class _CardioFields extends StatelessWidget {
+  const _CardioFields({required this.draft});
+
+  final _DraftExercise draft;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = [
+      for (final (key, label, unit, decimal, colon) in draft.cardioSpecs)
+        _NumberField(
+          controller: draft.cardio[key]!,
+          suffix: unit,
+          label: label,
+          decimal: decimal,
+          colon: colon,
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < fields.length; i += 2)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(child: fields[i]),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: i + 1 < fields.length
+                        ? fields[i + 1]
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+          Text(
+            '시간은 꼭 적어 주세요. 나머지는 기기에 나온 값만',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 12,
+            ),
+          ),
         ],
       ),
     );
@@ -508,12 +642,16 @@ class _NumberField extends StatelessWidget {
   const _NumberField({
     required this.controller,
     required this.suffix,
+    this.label,
     this.decimal = false,
+    this.colon = false,
   });
 
   final TextEditingController controller;
   final String suffix;
+  final String? label;
   final bool decimal; // 무게는 소수점 허용 (2.5kg 원판 등)
+  final bool colon; // 로잉 500m 페이스 2:05
 
   @override
   Widget build(BuildContext context) {
@@ -522,12 +660,17 @@ class _NumberField extends StatelessWidget {
       keyboardType: TextInputType.numberWithOptions(decimal: decimal),
       inputFormatters: [
         FilteringTextInputFormatter.allow(
-          decimal ? RegExp(r'^\d*\.?\d{0,2}') : RegExp(r'\d'),
+          colon
+              ? RegExp(r'[\d:]')
+              : decimal
+              ? RegExp(r'^\d*\.?\d{0,2}')
+              : RegExp(r'\d'),
         ),
       ],
       textAlign: TextAlign.end,
       decoration: InputDecoration(
         isDense: true,
+        labelText: label,
         suffixText: suffix,
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.06),

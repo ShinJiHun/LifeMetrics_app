@@ -62,6 +62,14 @@ enum CardioMachine {
     }
     return null;
   }
+
+  // 서버 종목 이름(러닝머신 · 실내 사이클 ...)으로 기구 찾기. 모르는 기구면 null
+  static CardioMachine? forItemName(String nameKo) {
+    for (final m in values) {
+      if (m.names.any(nameKo.contains)) return m;
+    }
+    return null;
+  }
 }
 
 // 유산소 한 가지 처방

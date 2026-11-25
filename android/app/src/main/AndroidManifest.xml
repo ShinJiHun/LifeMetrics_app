@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 백엔드 API 호출 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 관리자 지문 로그인 (local_auth) -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- 헬스 커넥트 읽기 (삼성헬스 동기화 데이터) -->
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>

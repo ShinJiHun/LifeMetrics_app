@@ -24,4 +24,23 @@ class HealthCheckupApi {
       for (final e in body) HealthCheckup.fromJson(e as Map<String, dynamic>),
     ]..sort((a, b) => b.date.compareTo(a.date));
   }
+
+  // 검진 결과통보서 PDF → AI 가 수치를 뽑아 돌려줌 (저장 안 함, 관리자).
+  // 결과통보서가 3쪽 · 50여 항목이라 AI 가 1~2분 걸릴 수 있어 넉넉히 기다림.
+  // 스캔 이미지 PDF 는 서버가 글자를 못 읽어 422 + 이유 메시지
+  Future<Map<String, dynamic>> extract(List<int> bytes, String filename) async {
+    final body = await postFile(
+      _client,
+      '/api/body/health-checkups/extract',
+      bytes: bytes,
+      filename: filename,
+      timeout: const Duration(seconds: 150),
+    );
+    if (body is! Map) throw const ApiException('서버 응답을 읽지 못했어요');
+    return body.cast<String, dynamic>();
+  }
+
+  // 검토한 검진 저장 (관리자)
+  Future<void> create(Map<String, dynamic> checkup) =>
+      postJson(_client, '/api/body/health-checkups', checkup);
 }

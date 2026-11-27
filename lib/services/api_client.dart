@@ -130,6 +130,7 @@ Future<Object?> postFile(
   required List<int> bytes,
   required String filename,
   Map<String, String> fields = const {},
+  Duration timeout = const Duration(seconds: 60),
 }) async {
   final uri = Uri.parse('$apiBaseUrl$path')
       .replace(queryParameters: {'userId': '$apiUserId'});
@@ -143,7 +144,7 @@ Future<Object?> postFile(
   final http.Response res;
   try {
     res = await http.Response.fromStream(
-      await client.send(req).timeout(const Duration(seconds: 60)),
+      await client.send(req).timeout(timeout),
     );
   } catch (_) {
     throw const ApiException('서버에 연결할 수 없어요');

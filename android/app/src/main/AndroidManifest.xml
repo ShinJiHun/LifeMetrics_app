@@ -31,6 +31,7 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
+            android:enableOnBackInvokedCallback="true"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
@@ -65,6 +66,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 홈 화면 위젯 (오늘 걸음 · 이번 주 라이딩 · 체중) -->
+        <receiver
+            android:name=".LifeMetricsWidgetProvider"
+            android:exported="true"
+            android:label="LifeMetrics 요약">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lifemetrics_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

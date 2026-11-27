@@ -5,14 +5,30 @@ import 'athlete/athlete_home_screen.dart';
 import 'human/diary_screen.dart';
 import 'persona_select_screen.dart';
 
-// 페르소나별 대시보드 (애슬리트 · 인간 외에는 아직 임시 화면)
+// 페르소나별 대시보드 (애슬리트 · 인간 외에는 아직 임시 화면).
+// 앱의 첫 화면이라 뒤로가기를 누르면 앱을 닫지 않고 페르소나 선택으로 감 (거기서 한 번 더 누르면 종료)
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.persona});
 
   final Persona persona;
 
+  void _toPersonaSelect(BuildContext context) =>
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => PersonaSelectScreen(initial: persona)),
+      );
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _toPersonaSelect(context);
+      },
+      child: _scaffold(context),
+    );
+  }
+
+  Widget _scaffold(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF15122B),
       appBar: AppBar(
@@ -25,11 +41,7 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             tooltip: '페르소나 변경',
             icon: const Icon(Icons.swap_horiz),
-            onPressed: () => Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => PersonaSelectScreen(initial: persona),
-              ),
-            ),
+            onPressed: () => _toPersonaSelect(context),
           ),
         ],
       ),

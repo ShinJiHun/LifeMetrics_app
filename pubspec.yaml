@@ -44,6 +44,8 @@ dependencies:
   workmanager: ^0.10.10
   local_auth: ^3.0.2
   flutter_secure_storage: ^11.2.0
+  file_picker: ^13.4.1
+  home_widget: ^0.10.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

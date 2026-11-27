@@ -49,3 +49,5 @@ app.*.map.json
 
 # 로컬 비밀값 (Mapbox 토큰 등), --dart-define-from-file=env.json
 env.json
+
+Claude outputs/

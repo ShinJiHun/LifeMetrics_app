@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4x1 기본, 가로로 늘릴 수 있음. 숫자 갱신은 앱(WorkManager 한 시간마다)이 하므로 시스템 주기 갱신은 끔 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/lifemetrics_widget"
+    android:previewLayout="@layout/lifemetrics_widget"
+    android:minWidth="250dp"
+    android:minHeight="56dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:resizeMode="horizontal"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

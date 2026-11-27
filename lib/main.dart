@@ -3,13 +3,18 @@ import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_client.dart' show isDevApp;
 import 'services/health_auto_sync.dart';
+import 'services/home_widget_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  HealthAutoSync.initialize().catchError(
-    (Object e) => debugPrint('자동 동기화 초기화 실패: $e'),
-  );
+  HealthAutoSync.initialize()
+      .then((_) => HomeWidgetService.schedule())
+      .catchError((Object e) => debugPrint('자동 동기화 초기화 실패: $e'));
   runApp(const MyApp());
+  // 앱을 켤 때마다 홈 위젯 숫자 새로 (실패해도 앱에는 영향 없음)
+  HomeWidgetService.refresh().catchError(
+    (Object e) => debugPrint('위젯 갱신 실패: $e'),
+  );
 }
 
 class MyApp extends StatelessWidget {

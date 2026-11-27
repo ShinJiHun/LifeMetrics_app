@@ -86,6 +86,29 @@ class HealthService {
     await _health.requestAuthorization(types, permissions: _read);
   }
 
+  // 홈 위젯용: 오늘 걸음 (폰 · 워치 중복을 뺀 헬스 커넥트 합계)
+  Future<int?> todaySteps({DateTime? now}) async {
+    await _configure();
+    final end = now ?? DateTime.now();
+    return _health.getTotalStepsInInterval(
+      DateTime(end.year, end.month, end.day),
+      end,
+    );
+  }
+
+  // 홈 위젯용: 최근 30일 중 마지막 체중 (kg)
+  Future<double?> latestWeight({DateTime? now}) async {
+    await _configure();
+    final end = now ?? DateTime.now();
+    final points = await _health.getHealthDataFromTypes(
+      types: const [HealthDataType.WEIGHT],
+      startTime: end.subtract(const Duration(days: 30)),
+      endTime: end,
+    );
+    final w = _latest(points, HealthDataType.WEIGHT);
+    return w == null ? null : _value(w);
+  }
+
   // 오늘 포함 최근 [dayCount]일 요약
   Future<HealthSnapshot> fetch({int dayCount = 7, DateTime? now}) async {
     await _configure();

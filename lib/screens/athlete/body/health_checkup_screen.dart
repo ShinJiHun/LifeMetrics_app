@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../../models/athlete_section.dart';
@@ -6,10 +7,12 @@ import '../../../services/api_client.dart';
 import '../../../services/health_checkup_api.dart';
 import '../../../utils/format.dart';
 import '../../../widgets/admin_login_dialog.dart';
+import 'health_checkup_form_screen.dart';
 
 // 신체 기록 > 건강검진: 서버에 저장된 국가건강검진 결과(웹에서 PDF 로 올림)를 봄.
 // 맨 위 최근 검진 요약 → 주요 수치(지난 검진 대비 변화) → 검진 기록 목록.
-// 서버 조회가 관리자 전용이라 처음에 비밀번호를 물음
+// 서버 조회가 관리자 전용이라 처음에 비밀번호를 물음.
+// 오른쪽 위 + : 결과통보서 PDF 를 올려 AI 로 수치를 뽑고 검토 후 저장, 또는 직접 입력
 class HealthCheckupScreen extends StatefulWidget {
   const HealthCheckupScreen({super.key, this.api});
 
@@ -68,6 +71,95 @@ class _HealthCheckupScreenState extends State<HealthCheckupScreen> {
     }
   }
 
+  // 검진 추가: PDF(AI 추출) 또는 직접 입력
+  Future<void> _add() async {
+    final fromPdf = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1A38),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('결과통보서 PDF 올리기'),
+              subtitle: const Text('AI 가 수치를 읽어 채워요 (1~2분)'),
+              onTap: () => Navigator.pop(context, true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('직접 입력'),
+              onTap: () => Navigator.pop(context, false),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (fromPdf == null || !mounted) return;
+    var initial = const <String, dynamic>{};
+    if (fromPdf) {
+      final read = await _extractPdf();
+      if (read == null || !mounted) return;
+      initial = read;
+    }
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => HealthCheckupFormScreen(
+          api: _api,
+          color: _color,
+          initial: initial,
+          fromPdf: fromPdf,
+        ),
+      ),
+    );
+    if (saved == true) await _load();
+  }
+
+  // PDF 고르기 → 서버 AI 추출. 기다리는 동안 진행 표시, 실패하면 이유를 보여주고 null
+  Future<Map<String, dynamic>?> _extractPdf() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+    );
+    if (files.isEmpty || !mounted) return null;
+    final file = files.first;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return null;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('AI 가 결과통보서를 읽는 중이에요\n(1~2분 걸릴 수 있어요)')),
+          ],
+        ),
+      ),
+    );
+    try {
+      try {
+        return await _api.extract(bytes, file.name);
+      } on AdminRequiredException {
+        if (!mounted ||
+            !await loginAdminWithDialog(context, _api.loginAdmin)) {
+          return null;
+        }
+        return await _api.extract(bytes, file.name);
+      }
+    } on ApiException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('${e.message} · 직접 입력으로도 저장할 수 있어요')),
+      );
+      return null;
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
   Future<void> _login() async {
     if (!mounted) return;
     if (await loginAdminWithDialog(context, _api.loginAdmin)) await _load();
@@ -80,6 +172,13 @@ class _HealthCheckupScreenState extends State<HealthCheckupScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: const Text('건강검진'),
+        actions: [
+          IconButton(
+            tooltip: '검진 추가',
+            icon: const Icon(Icons.add),
+            onPressed: _loading ? null : _add,
+          ),
+        ],
       ),
       body: _body(),
     );

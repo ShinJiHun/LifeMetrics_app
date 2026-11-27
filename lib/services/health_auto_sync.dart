@@ -6,6 +6,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'health_service.dart';
 import 'health_sync_service.dart';
+import 'home_widget_service.dart';
 
 const _taskName = 'lifemetrics.health_sync.daily';
 
@@ -15,7 +16,17 @@ void healthAutoSyncDispatcher() {
   WidgetsFlutterBinding.ensureInitialized();
   // 백그라운드 엔진에선 shared_preferences 같은 Dart 쪽 플러그인 등록을 직접 해야 함
   DartPluginRegistrant.ensureInitialized();
-  Workmanager().executeTask((_, _) => runHealthAutoSync());
+  Workmanager().executeTask((task, _) async {
+    // 한 시간마다: 홈 위젯 숫자만 새로
+    if (task == HomeWidgetService.taskName) {
+      await HomeWidgetService.refresh();
+      return true;
+    }
+    // 매일 00시: 헬스 커넥트 → 서버 동기화, 끝나면 위젯도 새로
+    final ok = await runHealthAutoSync();
+    await HomeWidgetService.refresh();
+    return ok;
+  });
 }
 
 // true 면 이번 회차 끝, false 면 WorkManager 가 간격을 늘려가며 재시도

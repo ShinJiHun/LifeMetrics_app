@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../models/persona.dart';
 import 'athlete/athlete_home_screen.dart';
 import 'human/diary_screen.dart';
+import 'investor/stock_screen.dart';
 import 'persona_select_screen.dart';
 
-// 페르소나별 대시보드 (애슬리트 · 인간 외에는 아직 임시 화면).
+// 페르소나별 대시보드 (애슬리트 · 인간 · 증권 외에는 아직 임시 화면).
 // 앱의 첫 화면이라 뒤로가기를 누르면 앱을 닫지 않고 페르소나 선택으로 감 (거기서 한 번 더 누르면 종료)
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.persona});
@@ -35,7 +36,11 @@ class HomeScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: Text(
-          persona == Persona.human ? '인간 · 하루 일기' : '${persona.title} 대시보드',
+          switch (persona) {
+            Persona.human => '인간 · 하루 일기',
+            Persona.investor => '증권 · 토스 계좌',
+            _ => '${persona.title} 대시보드',
+          },
         ),
         actions: [
           IconButton(
@@ -51,6 +56,7 @@ class HomeScreen extends StatelessWidget {
         child: switch (persona) {
           Persona.athlete => const AthleteHomeScreen(),
           Persona.human => const DiaryScreen(),
+          Persona.investor => const StockScreen(),
           _ => _PlaceholderBody(persona: persona),
         },
       ),
